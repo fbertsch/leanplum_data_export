@@ -18,6 +18,11 @@ def exporter():
     return LeanplumExporter(app_id, client_key)
 
 
+class BlobList:
+    def __init__(self, blobs):
+        self.pages = [blobs]
+
+
 class TestExporter(object):
 
     def test_add_slash(self, exporter):
@@ -93,7 +98,7 @@ class TestExporter(object):
 
         mock_bucket, mock_client, mock_blob = Mock(), Mock(), Mock()
 
-        mock_client.list_blobs.side_effect = [[]]
+        mock_client.list_blobs.return_value = BlobList([])
         mock_client.bucket.return_value = mock_bucket
         mock_bucket.blob.return_value = mock_blob
         mock_blob.upload_from_filename.side_effect = set_contents
@@ -132,7 +137,7 @@ class TestExporter(object):
 
         mock_bucket, mock_client, mock_blob = Mock(), Mock(), Mock()
 
-        mock_client.list_blobs.side_effect = [[]]
+        mock_client.list_blobs.return_value = BlobList([])
         mock_client.bucket.return_value = mock_bucket
         mock_bucket.blob.return_value = mock_blob
         mock_blob.upload_from_filename.side_effect = set_contents
@@ -174,7 +179,7 @@ class TestExporter(object):
 
         mock_bucket, mock_client, mock_blob = Mock(), Mock(), Mock()
 
-        mock_client.list_blobs.side_effect = [["hello/world"]]
+        mock_client.list_blobs.return_value = BlobList(["hello/world"])
         mock_client.bucket.return_value = mock_bucket
         mock_bucket.blob.return_value = mock_blob
         mock_blob.upload_from_filename.side_effect = set_contents
@@ -249,7 +254,7 @@ class TestExporter(object):
             with patch('leanplum_data_export.export.storage', spec=True) as MockStorage:
                 mock_bucket, mock_client, mock_blob = Mock(), Mock(), Mock()
 
-                mock_client.list_blobs.side_effect = [[]]
+                mock_client.list_blobs.return_value = BlobList([])
                 mock_client.bucket.return_value = mock_bucket
                 mock_bucket.blob.return_value = mock_blob
                 mock_blob.upload_from_filename.side_effect = set_contents
@@ -340,7 +345,7 @@ class TestExporter(object):
             with patch('leanplum_data_export.export.storage', spec=True) as MockStorage:
                 mock_bucket, mock_client, mock_blob = Mock(), Mock(), Mock()
 
-                mock_client.list_blobs.side_effect = [[]]
+                mock_client.list_blobs.return_value = BlobList([])
                 mock_client.bucket.return_value = mock_bucket
                 mock_bucket.blob.return_value = mock_blob
                 mock_blob.upload_from_filename.side_effect = set_contents
@@ -396,10 +401,7 @@ class TestExporter(object):
         blobs = ["hello/world"]
         prefix = "hello"
 
-        class BlobList:
-            pages = [blobs]
-
-        client.list_blobs.return_value = BlobList()
+        client.list_blobs.return_value = BlobList(blobs)
 
         exporter.gcs_client = client
         exporter.delete_gcs_prefix(bucket, prefix)
