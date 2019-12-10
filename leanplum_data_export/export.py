@@ -126,14 +126,10 @@ class LeanplumExporter(object):
         return datatypes
 
     def delete_gcs_prefix(self, bucket, prefix):
-        max_results = 5000
-        blobs = list(self.gcs_client.list_blobs(bucket, prefix=prefix, max_results=max_results))
+        blobs = self.gcs_client.list_blobs(bucket, prefix=prefix)
 
-        if len(blobs) == max_results:
-            raise Exception((f"Max result of {max_results} found at gs://{bucket.name}"
-                             f"/{prefix}, increase limit or paginate"))
-
-        bucket.delete_blobs(blobs)
+        for page in blobs.pages:
+            bucket.delete_blobs(list(page))
 
     def create_external_tables(self, bucket_name, prefix, date, tables,
                                dataset, table_prefix, version):

@@ -395,23 +395,31 @@ class TestExporter(object):
         client, bucket = Mock(), Mock()
         blobs = ["hello/world"]
         prefix = "hello"
-        client.list_blobs.side_effect = [blobs]
+
+        class BlobList:
+            pages = [blobs]
+
+        client.list_blobs.return_value = BlobList()
 
         exporter.gcs_client = client
         exporter.delete_gcs_prefix(bucket, prefix)
 
-        client.list_blobs.assert_called_with(bucket, prefix=prefix, max_results=5000)
+        client.list_blobs.assert_called_with(bucket, prefix=prefix)
         bucket.delete_blobs.assert_called_with(blobs)
 
-    def test_delete_gcs_prefix_err_max_results(self, exporter):
+    def test_delete_gcs_prefix_pagination(self, exporter):
         client, bucket = Mock(), Mock()
-        blobs = ["hello/world" for i in range(5000)]
         prefix = "hello"
-        client.list_blobs.side_effect = [blobs]
-        exporter.gcs_client = client
 
-        with pytest.raises(Exception):
-            exporter.delete_gcs_prefix(bucket, prefix)
+        class BlobList:
+            pages = [["hello/world"] * 1000] * 5
+
+        client.list_blobs.return_value = BlobList()
+
+        exporter.gcs_client = client
+        exporter.delete_gcs_prefix(bucket, prefix)
+
+        assert bucket.delete_blobs.call_count == 5
 
     def test_created_external_tables(self, exporter):
         date = "20190101"
