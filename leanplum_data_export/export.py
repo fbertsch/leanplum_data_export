@@ -126,7 +126,7 @@ class LeanplumExporter(object):
         return datatypes
 
     def delete_gcs_prefix(self, bucket, prefix):
-        max_results = 1000
+        max_results = 5000
         blobs = list(self.gcs_client.list_blobs(bucket, prefix=prefix, max_results=max_results))
 
         if len(blobs) == max_results:
