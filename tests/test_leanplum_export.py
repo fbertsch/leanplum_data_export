@@ -280,7 +280,10 @@ class TestExporter(object):
 
                 mock_bq_client.dataset.assert_any_call(tmp_dataset)
                 mock_bq_client.delete_table.assert_any_call(mock_table, not_found_ok=True)
-                MockBq.TableReference.assert_any_call(mock_dataset_ref, f"sessions_v1_{date}")
+                MockBq.TableReference.assert_any_call(
+                    mock_dataset_ref,
+                    f"{dataset_name}_sessions_v1_{date}"
+                )
                 MockBq.Table.assert_any_call(mock_table_ref)
                 MockBq.ExternalConfig.assert_any_call("CSV")
 
@@ -301,7 +304,8 @@ class TestExporter(object):
                 expected_query = (
                     f"CREATE TABLE `{dataset_name}.sessions_v1` "
                     f"PARTITION BY load_date AS SELECT * EXCEPT (lat,lon), "
-                    f"PARSE_DATE('%Y%m%d', '{date}') AS load_date FROM `tmp.sessions_v1_{date}`")
+                    f"PARSE_DATE('%Y%m%d', '{date}') AS load_date "
+                    f"FROM `tmp.{dataset_name}_sessions_v1_{date}`")
                 mock_bq_client.query.assert_any_call(expected_query)
 
                 mock_bq_client.delete_table.assert_any_call(mock_table)
@@ -371,7 +375,10 @@ class TestExporter(object):
 
                 mock_bq_client.dataset.assert_any_call(tmp_dataset)
                 mock_bq_client.delete_table.assert_any_call(mock_table, not_found_ok=True)
-                MockBq.TableReference.assert_any_call(mock_dataset_ref, f"sessions_v1_{date}")
+                MockBq.TableReference.assert_any_call(
+                    mock_dataset_ref,
+                    f"{dataset_name}_sessions_v1_{date}"
+                )
                 MockBq.Table.assert_any_call(mock_table_ref)
                 MockBq.ExternalConfig.assert_any_call("CSV")
 
@@ -391,7 +398,8 @@ class TestExporter(object):
 
                 insert_query = (
                     f"INSERT INTO `{dataset_name}.sessions_v1` SELECT * EXCEPT (lat,lon), "
-                    f"PARSE_DATE('%Y%m%d', '{date}') AS load_date FROM `tmp.sessions_v1_{date}`")
+                    f"PARSE_DATE('%Y%m%d', '{date}') AS load_date "
+                    f"FROM `tmp.{dataset_name}_sessions_v1_{date}`")
                 mock_bq_client.query.assert_any_call(insert_query)
 
                 mock_bq_client.delete_table.assert_any_call(mock_table)
@@ -425,6 +433,7 @@ class TestExporter(object):
         date = "20190101"
         bucket = 'abucket'
         prefix = 'aprefix'
+        ext_dataset_name = "ext_dataset"
         dataset_name = "leanplum_dataset"
         tables = ["sessions"]
         table_prefix = "prefix"
@@ -440,12 +449,14 @@ class TestExporter(object):
 
             exporter.bq_client = mock_bq_client
             exporter.create_external_tables(
-                bucket, prefix, date, tables, dataset_name, table_prefix, 1)
+                bucket, prefix, date, tables, ext_dataset_name, dataset_name, table_prefix, 1)
 
-            mock_bq_client.dataset.assert_any_call(dataset_name)
+            mock_bq_client.dataset.assert_any_call(ext_dataset_name)
             mock_bq_client.delete_table.assert_called_with(mock_table, not_found_ok=True)
-            MockBq.TableReference.assert_any_call(mock_dataset_ref,
-                                                  f"{table_prefix}_sessions_v1_{date}")
+            MockBq.TableReference.assert_any_call(
+                mock_dataset_ref,
+                f"{dataset_name}_{table_prefix}_sessions_v1_{date}"
+            )
             MockBq.Table.assert_any_call(mock_table_ref)
             MockBq.ExternalConfig.assert_any_call("CSV")
 

@@ -31,11 +31,11 @@ class LeanplumExporter(object):
         job_id = self.init_export(date, export_format)
         file_uris = self.get_files(job_id)
         tables = self.save_files(file_uris, bucket, prefix, date, export_format, version)
-        self.create_external_tables(bucket, prefix, date, tables,
-                                    self.TMP_DATASET, table_prefix, version)
+        self.create_external_tables(bucket, prefix, date, tables, self.TMP_DATASET,
+                                    dataset, table_prefix, version)
         self.delete_existing_data(dataset, table_prefix, tables, version, date)
         self.load_tables(self.TMP_DATASET, dataset, table_prefix, tables, version, date)
-        self.drop_external_tables(self.TMP_DATASET, table_prefix, tables, version, date)
+        self.drop_external_tables(self.TMP_DATASET, dataset, table_prefix, tables, version, date)
 
     def init_export(self, date, export_format):
         export_init_url = (f"http://www.leanplum.com/api"
@@ -132,13 +132,13 @@ class LeanplumExporter(object):
             bucket.delete_blobs(list(page))
 
     def create_external_tables(self, bucket_name, prefix, date, tables,
-                               dataset, table_prefix, version):
+                               ext_dataset, dataset, table_prefix, version):
         gcs_loc = f"gs://{bucket_name}/{prefix}/v{version}/{date}"
-        dataset_ref = self.bq_client.dataset(dataset)
+        dataset_ref = self.bq_client.dataset(ext_dataset)
 
         for leanplum_name in tables:
-            table_name = self.get_table_name(table_prefix, leanplum_name, version, date)
-            logging.info(f"Creating external table {dataset}.{table_name}")
+            table_name = self.get_table_name(table_prefix, leanplum_name, version, date, dataset)
+            logging.info(f"Creating external table {ext_dataset}.{table_name}")
 
             table_ref = bigquery.TableReference(dataset_ref, table_name)
             table = bigquery.Table(table_ref)
@@ -169,7 +169,7 @@ class LeanplumExporter(object):
         destination_dataset = self.bq_client.dataset(dataset)
 
         for table in tables:
-            ext_table_name = self.get_table_name(table_prefix, table, version, date)
+            ext_table_name = self.get_table_name(table_prefix, table, version, date, dataset)
             table_name = self.get_table_name(table_prefix, table, version)
 
             destination_table = bigquery.TableReference(destination_dataset, table_name)
@@ -198,11 +198,11 @@ class LeanplumExporter(object):
             job = self.bq_client.query(sql)
             job.result()
 
-    def drop_external_tables(self, ext_dataset, table_prefix, tables, version, date):
+    def drop_external_tables(self, ext_dataset, dataset, table_prefix, tables, version, date):
         dataset_ref = self.bq_client.dataset(ext_dataset)
 
         for leanplum_name in tables:
-            table_name = self.get_table_name(table_prefix, leanplum_name, version, date)
+            table_name = self.get_table_name(table_prefix, leanplum_name, version, date, dataset)
             table_ref = bigquery.TableReference(dataset_ref, table_name)
             table = bigquery.Table(table_ref)
 
@@ -217,13 +217,15 @@ class LeanplumExporter(object):
         except exceptions.NotFound:
             return False
 
-    def get_table_name(self, table_prefix, leanplum_name, version, date=None):
+    def get_table_name(self, table_prefix, leanplum_name, version, date=None, dataset_prefix=None):
         if table_prefix:
             table_prefix += "_"
         else:
             table_prefix = ""
 
         name = f"{table_prefix}{leanplum_name}_v{version}"
+        if dataset_prefix is not None:
+            name = f"{dataset_prefix}_{name}"
         if date is not None:
             name += f"_{date}"
 
