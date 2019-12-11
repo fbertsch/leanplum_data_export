@@ -4,7 +4,7 @@ import requests
 import os
 import re
 
-from unittest.mock import patch, Mock
+from unittest.mock import patch, Mock, PropertyMock
 from leanplum_data_export.export import LeanplumExporter
 from google.cloud import exceptions
 
@@ -16,11 +16,6 @@ client_key = "clientkey"
 @pytest.fixture
 def exporter():
     return LeanplumExporter(app_id, client_key)
-
-
-class BlobList:
-    def __init__(self, blobs):
-        self.pages = [blobs]
 
 
 class TestExporter(object):
@@ -98,7 +93,8 @@ class TestExporter(object):
 
         mock_bucket, mock_client, mock_blob = Mock(), Mock(), Mock()
 
-        mock_client.list_blobs.return_value = BlobList([])
+        type(mock_blob).pages = PropertyMock(return_value=[["hello/world"]])
+        mock_client.list_blobs.return_value = mock_blob
         mock_client.bucket.return_value = mock_bucket
         mock_bucket.blob.return_value = mock_blob
         mock_blob.upload_from_filename.side_effect = set_contents
@@ -137,7 +133,8 @@ class TestExporter(object):
 
         mock_bucket, mock_client, mock_blob = Mock(), Mock(), Mock()
 
-        mock_client.list_blobs.return_value = BlobList([])
+        type(mock_blob).pages = PropertyMock(return_value=[["hello/world"]])
+        mock_client.list_blobs.return_value = mock_blob
         mock_client.bucket.return_value = mock_bucket
         mock_bucket.blob.return_value = mock_blob
         mock_blob.upload_from_filename.side_effect = set_contents
@@ -179,7 +176,8 @@ class TestExporter(object):
 
         mock_bucket, mock_client, mock_blob = Mock(), Mock(), Mock()
 
-        mock_client.list_blobs.return_value = BlobList(["hello/world"])
+        type(mock_blob).pages = PropertyMock(return_value=[["hello/world"]])
+        mock_client.list_blobs.return_value = mock_blob
         mock_client.bucket.return_value = mock_bucket
         mock_bucket.blob.return_value = mock_blob
         mock_blob.upload_from_filename.side_effect = set_contents
@@ -254,7 +252,8 @@ class TestExporter(object):
             with patch('leanplum_data_export.export.storage', spec=True) as MockStorage:
                 mock_bucket, mock_client, mock_blob = Mock(), Mock(), Mock()
 
-                mock_client.list_blobs.return_value = BlobList([])
+                type(mock_blob).pages = PropertyMock(return_value=[])
+                mock_client.list_blobs.return_value = mock_blob
                 mock_client.bucket.return_value = mock_bucket
                 mock_bucket.blob.return_value = mock_blob
                 mock_blob.upload_from_filename.side_effect = set_contents
@@ -345,7 +344,8 @@ class TestExporter(object):
             with patch('leanplum_data_export.export.storage', spec=True) as MockStorage:
                 mock_bucket, mock_client, mock_blob = Mock(), Mock(), Mock()
 
-                mock_client.list_blobs.return_value = BlobList([])
+                type(mock_blob).pages = PropertyMock(return_value=[])
+                mock_client.list_blobs.return_value = mock_blob
                 mock_client.bucket.return_value = mock_bucket
                 mock_bucket.blob.return_value = mock_blob
                 mock_blob.upload_from_filename.side_effect = set_contents
@@ -397,26 +397,24 @@ class TestExporter(object):
                 mock_bq_client.delete_table.assert_any_call(mock_table)
 
     def test_delete_gcs_prefix(self, exporter):
-        client, bucket = Mock(), Mock()
-        blobs = ["hello/world"]
+        client, bucket, blobs = Mock(), Mock(), Mock()
         prefix = "hello"
 
-        client.list_blobs.return_value = BlobList(blobs)
+        type(blobs).pages = PropertyMock(return_value=[["hello/world"]])
+        client.list_blobs.return_value = blobs
 
         exporter.gcs_client = client
         exporter.delete_gcs_prefix(bucket, prefix)
 
         client.list_blobs.assert_called_with(bucket, prefix=prefix)
-        bucket.delete_blobs.assert_called_with(blobs)
+        bucket.delete_blobs.assert_called_with(blobs.pages[0])
 
     def test_delete_gcs_prefix_pagination(self, exporter):
-        client, bucket = Mock(), Mock()
+        client, bucket, blobs = Mock(), Mock(), Mock()
         prefix = "hello"
 
-        class BlobList:
-            pages = [["hello/world"] * 1000] * 5
-
-        client.list_blobs.return_value = BlobList()
+        type(blobs).pages = PropertyMock(return_value=[["hello/world"] * 1000] * 5)
+        client.list_blobs.return_value = blobs
 
         exporter.gcs_client = client
         exporter.delete_gcs_prefix(bucket, prefix)
