@@ -148,7 +148,8 @@ class LeanplumExporter(object):
             external_config = bigquery.ExternalConfig('CSV')
             external_config.source_uris = [f"{gcs_loc}/{leanplum_name}/*"]
             external_config.autodetect = True
-            external_config.options.allow_jagged_rows = True
+            #external_config.options.allow_jagged_rows = True
+            external_config.options.allow_quoted_newlines = True
 
             table.external_data_configuration = external_config
 
