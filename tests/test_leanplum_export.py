@@ -289,7 +289,6 @@ class TestExporter(object):
 
                 expected_source_uris = [f"gs://{bucket}/{prefix}/v1/{date}/sessions/*"]
                 assert mock_config.source_uris == expected_source_uris
-                assert mock_config.autodetect is True
                 assert mock_table.external_data_configuration == mock_config
                 mock_bq_client.create_table.assert_any_call(mock_table)
 
@@ -384,7 +383,6 @@ class TestExporter(object):
 
                 expected_source_uris = [f"gs://{bucket}/{prefix}/v1/{date}/sessions/*"]
                 assert mock_config.source_uris == expected_source_uris
-                assert mock_config.autodetect is True
                 assert mock_table.external_data_configuration == mock_config
                 mock_bq_client.create_table.assert_any_call(mock_table)
 
@@ -462,7 +460,6 @@ class TestExporter(object):
 
             expected_source_uris = [f"gs://{bucket}/{prefix}/v1/{date}/sessions/*"]
             assert mock_config.source_uris == expected_source_uris
-            assert mock_config.autodetect is True
             assert mock_table.external_data_configuration == mock_config
             mock_bq_client.create_table.assert_any_call(mock_table)
 
