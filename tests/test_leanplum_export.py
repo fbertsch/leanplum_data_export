@@ -4,7 +4,7 @@ import requests
 import os
 import re
 
-from unittest.mock import patch, Mock, PropertyMock, MagicMock
+from unittest.mock import patch, Mock, PropertyMock
 from leanplum_data_export.export import LeanplumExporter
 from google.cloud import bigquery, exceptions
 
