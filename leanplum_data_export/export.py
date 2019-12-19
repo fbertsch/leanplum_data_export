@@ -1,10 +1,12 @@
+import json
+import logging
+import os
+import re
 import requests
 import time
-import logging
-import re
 
-from pathlib import Path
 from google.cloud import bigquery, exceptions, storage
+from pathlib import Path
 
 
 class LeanplumExporter(object):
@@ -16,6 +18,7 @@ class LeanplumExporter(object):
                    "/export-.*-output([a-z0-9]+)-([0-9]+)$")
     TMP_DATASET = "tmp"
     DROP_COLS = {"sessions": {"lat", "lon"}}
+    SCHEMA_DIR = os.path.join(os.path.dirname(__file__), "schemas/")
 
     def __init__(self, app_id, client_key):
         self.app_id = app_id
@@ -145,9 +148,18 @@ class LeanplumExporter(object):
 
             self.bq_client.delete_table(table, not_found_ok=True)
 
+            try:
+                schema_file_path = [
+                    os.path.join(self.SCHEMA_DIR, f) for f
+                    in os.listdir(self.SCHEMA_DIR)
+                    if f.split(".")[0] == leanplum_name
+                ][0]
+            except IndexError:
+                raise Exception(f"Unrecognized table name encountered: {leanplum_name}")
+
             external_config = bigquery.ExternalConfig('CSV')
             external_config.source_uris = [f"{gcs_loc}/{leanplum_name}/*"]
-            external_config.autodetect = True
+            external_config.schema = self.parse_schema(schema_file_path)
             external_config.options.allow_quoted_newlines = True
 
             table.external_data_configuration = external_config
@@ -236,3 +248,15 @@ class LeanplumExporter(object):
         if not val.endswith("/"):
             val = f"{val}/"
         return val
+
+    def parse_schema(self, schema_file_path):
+        with open(schema_file_path) as schema_file:
+            fields = json.load(schema_file)
+        return [
+            bigquery.SchemaField(
+                field["name"],
+                field_type=field.get("type", "STRING"),
+                mode=field.get("mode", "NULLABLE"),
+            )
+            for field in fields
+        ]

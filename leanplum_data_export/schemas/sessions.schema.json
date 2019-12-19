@@ -1,0 +1,146 @@
+[
+  {
+    "type": "INTEGER",
+    "name": "sessionId"
+  },
+  {
+    "type": "STRING",
+    "name": "userId"
+  },
+  {
+    "type": "INTEGER",
+    "name": "userBucket"
+  },
+  {
+    "type": "TIMESTAMP",
+    "name": "userStart"
+  },
+  {
+    "type": "STRING",
+    "name": "country"
+  },
+  {
+    "type": "STRING",
+    "name": "region"
+  },
+  {
+    "type": "STRING",
+    "name": "city"
+  },
+  {
+    "type": "TIMESTAMP",
+    "name": "start"
+  },
+  {
+    "type": "FLOAT",
+    "name": "duration"
+  },
+  {
+    "type": "STRING",
+    "name": "lat"
+  },
+  {
+    "type": "STRING",
+    "name": "lon"
+  },
+  {
+    "type": "STRING",
+    "name": "locale"
+  },
+  {
+    "type": "STRING",
+    "name": "timezone"
+  },
+  {
+    "type": "INTEGER",
+    "name": "timezoneOffset"
+  },
+  {
+    "type": "STRING",
+    "name": "appVersion"
+  },
+  {
+    "type": "STRING",
+    "name": "client"
+  },
+  {
+    "type": "STRING",
+    "name": "sdkVersion"
+  },
+  {
+    "type": "STRING",
+    "name": "osName"
+  },
+  {
+    "type": "STRING",
+    "name": "osVersion"
+  },
+  {
+    "type": "STRING",
+    "name": "deviceModel"
+  },
+  {
+    "type": "STRING",
+    "name": "browserName"
+  },
+  {
+    "type": "STRING",
+    "name": "browserVersion"
+  },
+  {
+    "type": "STRING",
+    "name": "deviceId"
+  },
+  {
+    "type": "INTEGER",
+    "name": "priorEvents"
+  },
+  {
+    "type": "INTEGER",
+    "name": "priorSessions"
+  },
+  {
+    "type": "FLOAT",
+    "name": "priorTimeSpentInApp"
+  },
+  {
+    "type": "INTEGER",
+    "name": "priorStates"
+  },
+  {
+    "type": "BOOLEAN",
+    "name": "isDeveloper"
+  },
+  {
+    "type": "BOOLEAN",
+    "name": "isSession"
+  },
+  {
+    "type": "STRING",
+    "name": "sourcePublisherId"
+  },
+  {
+    "type": "STRING",
+    "name": "sourcePublisher"
+  },
+  {
+    "type": "STRING",
+    "name": "sourceSubPublisher"
+  },
+  {
+    "type": "STRING",
+    "name": "sourceSite"
+  },
+  {
+    "type": "STRING",
+    "name": "sourceCampaign"
+  },
+  {
+    "type": "STRING",
+    "name": "sourceAdGroup"
+  },
+  {
+    "type": "STRING",
+    "name": "sourceAd"
+  }
+]

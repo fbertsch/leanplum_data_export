@@ -1,0 +1,14 @@
+[
+  {
+    "type": "INTEGER",
+    "name": "eventId"
+  },
+  {
+    "type": "STRING",
+    "name": "name"
+  },
+  {
+    "type": "STRING",
+    "name": "value"
+  }
+]

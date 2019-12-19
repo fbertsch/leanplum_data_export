@@ -1,0 +1,34 @@
+[
+  {
+    "type": "INTEGER",
+    "name": "eventId"
+  },
+  {
+    "type": "INTEGER",
+    "name": "stateId"
+  },
+  {
+    "type": "INTEGER",
+    "name": "sessionId"
+  },
+  {
+    "type": "STRING",
+    "name": "eventName"
+  },
+  {
+    "type": "TIMESTAMP",
+    "name": "start"
+  },
+  {
+    "type": "FLOAT",
+    "name": "value"
+  },
+  {
+    "type": "STRING",
+    "name": "info"
+  },
+  {
+    "type": "FLOAT",
+    "name": "timeUntilFirstForUser"
+  }
+]

@@ -1,0 +1,14 @@
+[
+  {
+    "type": "INTEGER",
+    "name": "experimentId"
+  },
+  {
+    "type": "INTEGER",
+    "name": "sessionId"
+  },
+  {
+    "type": "INTEGER",
+    "name": "variantId"
+  }
+]

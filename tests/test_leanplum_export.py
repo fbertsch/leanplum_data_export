@@ -4,9 +4,9 @@ import requests
 import os
 import re
 
-from unittest.mock import patch, Mock, PropertyMock
+from unittest.mock import patch, Mock, PropertyMock, MagicMock
 from leanplum_data_export.export import LeanplumExporter
-from google.cloud import exceptions
+from google.cloud import bigquery, exceptions
 
 
 app_id = "appid"
@@ -465,3 +465,44 @@ class TestExporter(object):
             assert mock_config.autodetect is True
             assert mock_table.external_data_configuration == mock_config
             mock_bq_client.create_table.assert_any_call(mock_table)
+
+    def test_external_table_can_read_schema(self, exporter):
+        date = "20190101"
+        bucket = 'abucket'
+        prefix = 'aprefix'
+        ext_dataset_name = "ext_dataset"
+        dataset_name = "leanplum_dataset"
+        tables = ["sessions"]
+        table_prefix = "prefix"
+
+        with patch('leanplum_data_export.export.bigquery', spec=True) as MockBq:
+            mock_bq_client = Mock()
+            exporter.bq_client = mock_bq_client
+            mock_external_config = PropertyMock()
+            MockBq.SchemaField.side_effect = bigquery.SchemaField
+            MockBq.ExternalConfig.return_value = mock_external_config
+
+            exporter.create_external_tables(
+                bucket, prefix, date, tables, ext_dataset_name, dataset_name, table_prefix, 1)
+
+            assert len(mock_external_config.schema) > 0
+
+    def test_external_table_unrecognized_table(self, exporter):
+        date = "20190101"
+        bucket = 'abucket'
+        prefix = 'aprefix'
+        ext_dataset_name = "ext_dataset"
+        dataset_name = "leanplum_dataset"
+        tables = ["some_unknown_table"]
+        table_prefix = "prefix"
+
+        with patch('leanplum_data_export.export.bigquery', spec=True) as MockBq:
+            mock_bq_client = Mock()
+            exporter.bq_client = mock_bq_client
+            mock_external_config = PropertyMock()
+            MockBq.SchemaField.side_effect = bigquery.SchemaField
+            MockBq.ExternalConfig.return_value = mock_external_config
+
+            with pytest.raises(Exception):
+                exporter.create_external_tables(
+                    bucket, prefix, date, tables, ext_dataset_name, dataset_name, table_prefix, 1)

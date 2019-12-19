@@ -1,0 +1,14 @@
+[
+  {
+    "type": "INTEGER",
+    "name": "sessionId"
+  },
+  {
+    "type": "STRING",
+    "name": "name"
+  },
+  {
+    "type": "STRING",
+    "name": "value"
+  }
+]
