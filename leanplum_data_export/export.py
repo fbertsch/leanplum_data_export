@@ -8,8 +8,10 @@ import time
 from google.cloud import bigquery, exceptions, storage
 from pathlib import Path
 
+from .base_exporter import BaseLeanplumExporter
 
-class LeanplumExporter(object):
+
+class LeanplumExporter(BaseLeanplumExporter):
 
     FINISHED_STATE = "FINISHED"
     DEFAULT_SLEEP_SECONDS = 10

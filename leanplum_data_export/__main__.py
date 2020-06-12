@@ -8,12 +8,13 @@ import click
 import logging
 import sys
 
-from .export import LeanplumExporter
+from leanplum_data_export.export import LeanplumExporter
+from leanplum_data_export.export_streaming import StreamingLeanplumExporter
 
 
 @click.command()
-@click.option("--app-id", required=True)
-@click.option("--client-key", required=True)
+@click.option("--app-id", default=None)
+@click.option("--client-key", default=None)
 @click.option("--date", required=True)
 @click.option("--bucket", required=True)
 @click.option("--prefix", default="")
@@ -21,9 +22,17 @@ from .export import LeanplumExporter
 @click.option("--project", required=True)
 @click.option("--table-prefix", default=None)
 @click.option("--version", default=1)
+@click.option("--streaming/--no-streaming", default=False)
 def export_leanplum(app_id, client_key, date, bucket, prefix,
-                    bq_dataset, table_prefix, version, project):
-    exporter = LeanplumExporter(app_id, client_key)
+                    bq_dataset, table_prefix, version, project,
+                    streaming):
+    if not streaming:
+        if app_id is None or client_key is None:
+            raise ValueError("--app-id and --client-key arguments must be "
+                             "specified for historical export")
+        exporter = LeanplumExporter(app_id, client_key)
+    else:
+        exporter = StreamingLeanplumExporter()
     exporter.export(date, bucket, prefix, bq_dataset, table_prefix, version, project)
 
 
