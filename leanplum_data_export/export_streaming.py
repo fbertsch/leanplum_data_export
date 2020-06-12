@@ -10,6 +10,9 @@ from .base_exporter import BaseLeanplumExporter
 
 class StreamingLeanplumExporter(BaseLeanplumExporter):
 
+    def __init__(self):
+        self.s3_client = boto3.client("s3")
+
     @classmethod
     def extract_user_attributes(cls, session_data):
         attributes = []
@@ -67,7 +70,7 @@ class StreamingLeanplumExporter(BaseLeanplumExporter):
         return events, event_parameters
 
     @classmethod
-    def load_session_columns(cls):
+    def load_session_columns(cls):  # generalize to load any schema
         schema_dir = os.path.join(os.path.dirname(__file__), "schemas")
         with open(os.path.join(schema_dir, "sessions.schema.json")) as f:
             return [attribute["name"] for attribute in json.load(f)]
@@ -81,18 +84,22 @@ class StreamingLeanplumExporter(BaseLeanplumExporter):
                 session[name] = session_data.get(name)
         return session
 
-    def export(self, date, bucket, prefix, dataset, table_prefix, version, project):
-        s3_client = boto3.client("s3")
+    def get_data_file_keys(self, date, bucket, prefix):
+        """
+        Get the s3 keys of the data files in the given bucket
 
-        session_columns = self.load_session_columns()
-
+        :param date:
+        :param bucket:
+        :param prefix:
+        :return:
+        """
         data_file_keys = []
 
         continuation_token = {}  # value used for pagination
         while True:
-            object_list = s3_client.list_objects_v2(  # TODO: use params
+            object_list = self.s3_client.list_objects_v2(
                 Bucket=bucket,
-                Prefix=os.path.join(prefix, date),
+                Prefix=os.path.join(prefix, date, "export-"),
                 **continuation_token,
             )
             data_file_keys.extend([content["Key"] for content in object_list["Contents"]])
@@ -102,26 +109,53 @@ class StreamingLeanplumExporter(BaseLeanplumExporter):
 
             continuation_token["ContinuationToken"] = object_list["NextContinuationToken"]
 
+        return data_file_keys
+
+    def write_to_bq(self, csv_file_path, dataset, table_prefix, table_name):
+        """
+        Load data in the given CSV into a bigquery table
+
+        :param csv_file_path:
+        :param dataset:
+        :param table_prefix:
+        :param table_name:
+        """
+        pass
+
+    def transform_data_file(self, data_file_key, session_columns, bucket,
+                            dataset, table_prefix):
+        """
+        Get data file contents and convert to CSV to be loaded into bigquery
+
+        :param data_file_key:
+        :param session_columns:
+        :param bucket:
+        :param dataset:
+        :param table_prefix:
+        """
+        logging.info(f"Exporting {data_file_key}")
+        data_file = self.s3_client.get_object(
+            Bucket=bucket,
+            Key=data_file_key,
+        )
+
+        for line in data_file["Body"].iter_lines():
+            line.decode('utf-8')
+
+            session_data = json.loads(line)
+
+            user_attributes = self.extract_user_attributes(session_data)
+            states = self.extract_states(session_data)
+            experiments = self.extract_experiments(session_data)
+            events, event_parameters = self.extract_events(session_data)
+            session = self.extract_session(session_data, session_columns)
+
+            pass
+
+    def export(self, date, bucket, prefix, dataset, table_prefix, version, project):
+        session_columns = self.load_session_columns()
+
+        data_file_keys = self.get_data_file_keys(date, bucket, prefix)
+
         for key in data_file_keys:
-            logging.info(f"Exporting {key}")
-            logging.info(f"start: {time.time()}")
-            data_file = s3_client.get_object(
-                Bucket=bucket,
-                Key=key,
-            )
-
-            for line in data_file["Body"].iter_lines():
-                line.decode('utf-8')
-
-                session_data = json.loads(line)
-
-                user_attributes = self.extract_user_attributes(session_data)
-                states = self.extract_states(session_data)
-                experiments = self.extract_experiments(session_data)
-                events, event_parameters = self.extract_events(session_data)
-                session = self.extract_session(session_data, session_columns)
-
-                pass
-
-            logging.info(f"end: {time.time()}")
-        logging.info("a")
+            self.transform_data_file(key, session_columns, bucket, dataset, table_prefix)
