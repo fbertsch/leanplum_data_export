@@ -19,8 +19,6 @@ class LeanplumExporter(BaseLeanplumExporter):
     FILENAME_RE = (r"^https://leanplum_export.storage.googleapis.com"
                    "/export-.*-output([a-z0-9]+)-([0-9]+)$")
     TMP_DATASET = "tmp"
-    DROP_COLS = {"sessions": {"lat", "lon"}}
-    SCHEMA_DIR = os.path.join(os.path.dirname(__file__), "schemas/")
 
     def __init__(self, app_id, client_key):
         self.app_id = app_id
@@ -137,7 +135,7 @@ class LeanplumExporter(BaseLeanplumExporter):
             bucket.delete_blobs(list(page))
 
     def create_external_tables(self, bucket_name, prefix, date, tables,
-                               ext_dataset, dataset, table_prefix, version):
+                               ext_dataset, dataset, table_prefix, version):  # TODO: move to parent class
         gcs_loc = f"gs://{bucket_name}/{prefix}/v{version}/{date}"
         dataset_ref = self.bq_client.dataset(ext_dataset)
 
@@ -150,18 +148,18 @@ class LeanplumExporter(BaseLeanplumExporter):
 
             self.bq_client.delete_table(table, not_found_ok=True)
 
-            try:
-                schema_file_path = [
-                    os.path.join(self.SCHEMA_DIR, f) for f
-                    in os.listdir(self.SCHEMA_DIR)
-                    if f.split(".")[0] == leanplum_name
-                ][0]
-            except IndexError:
-                raise Exception(f"Unrecognized table name encountered: {leanplum_name}")
+            schema = [
+                bigquery.SchemaField(
+                    field["name"],
+                    field_type=field.get("type", "STRING"),
+                    mode=field.get("mode", "NULLABLE"),
+                )
+                for field in self.parse_schema(leanplum_name)
+            ]
 
             external_config = bigquery.ExternalConfig('CSV')
             external_config.source_uris = [f"{gcs_loc}/{leanplum_name}/*"]
-            external_config.schema = self.parse_schema(schema_file_path)
+            external_config.schema = schema
             external_config.options.skip_leading_rows = 1
             external_config.options.allow_quoted_newlines = True
 
@@ -181,7 +179,7 @@ class LeanplumExporter(BaseLeanplumExporter):
             logging.info(delete_sql)
             self.bq_client.query(delete_sql)
 
-    def load_tables(self, ext_dataset, dataset, table_prefix, tables, version, date):
+    def load_tables(self, ext_dataset, dataset, table_prefix, tables, version, date):  # TODO move to parent class
         destination_dataset = self.bq_client.dataset(dataset)
 
         for table in tables:
@@ -190,13 +188,8 @@ class LeanplumExporter(BaseLeanplumExporter):
 
             destination_table = bigquery.TableReference(destination_dataset, table_name)
 
-            drop_cols = self.DROP_COLS.get(table, set())
-            drop_clause = ""
-            if drop_cols:
-                drop_clause = f"EXCEPT ({','.join(sorted(drop_cols))})"
-
             select_sql = (
-                f"SELECT * {drop_clause}, PARSE_DATE('%Y%m%d', '{date}') AS {self.partition_field} "
+                f"SELECT * PARSE_DATE('%Y%m%d', '{date}') AS {self.partition_field} "
                 f"FROM `{ext_dataset}.{ext_table_name}`")
 
             if not self.get_table_exists(destination_table):
@@ -251,15 +244,3 @@ class LeanplumExporter(BaseLeanplumExporter):
         if not val.endswith("/"):
             val = f"{val}/"
         return val
-
-    def parse_schema(self, schema_file_path):
-        with open(schema_file_path) as schema_file:
-            fields = json.load(schema_file)
-        return [
-            bigquery.SchemaField(
-                field["name"],
-                field_type=field.get("type", "STRING"),
-                mode=field.get("mode", "NULLABLE"),
-            )
-            for field in fields
-        ]
