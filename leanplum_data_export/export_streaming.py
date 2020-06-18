@@ -3,9 +3,11 @@ import json
 import logging
 import os
 import re
+import tempfile
 from pathlib import Path
 
 import boto3
+from google.cloud import bigquery, storage
 
 from .base_exporter import BaseLeanplumExporter
 
@@ -16,8 +18,10 @@ class StreamingLeanplumExporter(BaseLeanplumExporter):
         "eventparameters", "events", "experiments", "sessions", "states", "userattributes"
     ]
 
-    def __init__(self):
+    def __init__(self, project):
         self.s3_client = boto3.client("s3")
+        self.bq_client = bigquery.Client(project=project)
+        self.gcs_client = storage.Client(project=project)
 
     @classmethod
     def extract_user_attributes(cls, session_data):
@@ -110,18 +114,41 @@ class StreamingLeanplumExporter(BaseLeanplumExporter):
         """
         pass
 
-    def write_to_gcs(self, file_pointer, data_type, bucket_name, date):
+    def write_to_gcs(self, file_path, data_type, bucket_name, prefix, date):
         """
-        Write file to GCS bucket so it can be loaded into Bigquery later
-        This is to circumvent the 1500 load job limit per table in Bigquery since GCS loads
-        can load multiple files in one job
+        Write file to GCS bucket so it can be transformed and loaded into Bigquery later
+        This is also to circumvent the 1500 load job limit per table per day in Bigquery
         """
-        pass
+        bucket = self.gcs_client.bucket(bucket_name)
+        gcs_path = os.path.join(prefix, date, data_type, file_path.name)
 
-    def transform_data_file(self, data_file_key, schemas, bucket, dataset, table_prefix):
+        logging.info(f"Uploading {file_path.name} to gs://{gcs_path}")
+        blob = bucket.blob(gcs_path)
+        blob.upload_from_filename(str(file_path))
+
+    def write_to_csv(self, csv_writers, session_data, schemas):
+        for user_attribute in self.extract_user_attributes(session_data):
+            csv_writers["userattributes"].writerow(user_attribute)
+
+        for state in self.extract_states(session_data):
+            csv_writers["sessions"].writerow(state)
+
+        for experiment in self.extract_experiments(session_data):
+            csv_writers["experiments"].writerow(experiment)
+
+        csv_writers["sessions"].writerow(
+            self.extract_session(session_data, schemas["sessions"]))
+
+        events, event_parameters = self.extract_events(session_data)
+        for event in events:
+            csv_writers["events"].writerow(event)
+        for event_parameter in event_parameters:
+            csv_writers["eventparameters"].writerow(event_parameter)
+
+    def transform_data_file(self, data_file_key, schemas, data_dir, bucket):
         """
         Get data file contents and convert to CSV for each data type and
-        load into bigquery
+        return paths to the files
         """
         logging.info(f"Exporting {data_file_key}")
         data_file = self.s3_client.get_object(
@@ -129,48 +156,31 @@ class StreamingLeanplumExporter(BaseLeanplumExporter):
             Key=data_file_key,
         )
 
-        data_dirs = [Path(data_type) for data_type in self.DATA_TYPES]
-        for data_dir in data_dirs:
-            data_dir.mkdir(parents=True, exist_ok=True)
-
         file_id = "-".join(data_file_key.split("-")[2:])
-        csv_files = {data_type: open(Path(os.path.join(f"{data_type}", f"{file_id}.csv")), "w")
-                     for data_type in self.DATA_TYPES}
-        csv_writers = {data_type: csv.DictWriter(csv_files[data_type], schemas[data_type])
-                       for data_type in self.DATA_TYPES}
-        for csv_writer in csv_writers:
-            csv_writer.writeheader()
-
+        csv_file_paths = {data_type: Path(os.path.join(data_dir, f"{data_type}-{file_id}.csv"))
+                          for data_type in self.DATA_TYPES}
+        csv_files = {data_type: open(file_path, "w")
+                     for data_type, file_path in csv_file_paths.items()}
         try:
+            csv_writers = {data_type: csv.DictWriter(csv_files[data_type], schemas[data_type])
+                           for data_type in self.DATA_TYPES}
+            for csv_writer in csv_writers.values():
+                csv_writer.writeheader()
+
             for line in data_file["Body"].iter_lines():
                 session_data = json.loads(line)
-
-                # TODO: simplify
-
-                for user_attribute in self.extract_user_attributes(session_data):
-                    csv_writers["userattributes"].writerow(user_attribute)
-                for state in self.extract_states(session_data):
-                    csv_writers["sessions"].writerow(state)
-                for experiment in self.extract_experiments(session_data):
-                    csv_writers["experiments"].writerow(experiment)
-                csv_writers["sessions"].writerow(
-                    self.extract_session(session_data, schemas["sessions"]))
-                events, event_parameters = self.extract_events(session_data)
-                for event in events:
-                    csv_writers["events"].writerow(event)
-                for event_parameter in event_parameters:
-                    csv_writers["eventparameters"].writerow(event_parameter)
+                self.write_to_csv(csv_writers, session_data, schemas)
         finally:
             for csv_file in csv_files.values():
                 csv_file.close()
 
-        return data_dirs
+        return csv_file_paths
 
-    def export(self, date, bucket, prefix, dataset, table_prefix, version, project):
+    def export(self, date, s3_bucket, gcs_bucket, prefix, dataset, table_prefix, version):
         schemas = {data_type: [field["name"] for field in self.parse_schema(data_type)]
                    for data_type in self.DATA_TYPES}
 
-        data_file_keys = self.get_files(date, bucket, prefix)
+        data_file_keys = self.get_files(date, s3_bucket, prefix)
 
         filename_re = re.compile(r"^.*/\d{8}/export-.*-output-([0-9]+)$")
 
@@ -178,5 +188,10 @@ class StreamingLeanplumExporter(BaseLeanplumExporter):
             if filename_re.fullmatch(key) is None:  # not a data file
                 continue
 
-            self.transform_data_file(key, schemas, bucket, dataset, table_prefix)
+            with tempfile.TemporaryDirectory() as data_dir:
+                csv_file_paths = self.transform_data_file(key, schemas, data_dir, s3_bucket)
+
+                for data_type, csv_file_path in csv_file_paths.items():
+                    self.write_to_gcs(csv_file_path, data_type, gcs_bucket, prefix, date)
+
             break

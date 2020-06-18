@@ -23,17 +23,21 @@ from leanplum_data_export.export_streaming import StreamingLeanplumExporter
 @click.option("--table-prefix", default=None)
 @click.option("--version", default=1)
 @click.option("--streaming/--no-streaming", default=False)
+@click.option("--s3-bucket", default=None)
 def export_leanplum(app_id, client_key, date, bucket, prefix,
                     bq_dataset, table_prefix, version, project,
-                    streaming):
+                    streaming, s3_bucket):
     if not streaming:
         if app_id is None or client_key is None:
             raise ValueError("--app-id and --client-key arguments must be "
                              "specified for historical export")
         exporter = LeanplumExporter(app_id, client_key)
+        exporter.export(date, bucket, prefix, bq_dataset, table_prefix, version, project)
     else:
-        exporter = StreamingLeanplumExporter()
-    exporter.export(date, bucket, prefix, bq_dataset, table_prefix, version, project)
+        if s3_bucket is None:
+            raise ValueError("--s3-bucket must be specified for streaming export")
+        exporter = StreamingLeanplumExporter(project)
+        exporter.export(date, s3_bucket, bucket, prefix, bq_dataset, table_prefix, version)
 
 
 @click.group()
