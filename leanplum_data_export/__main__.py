@@ -31,8 +31,8 @@ def export_leanplum(app_id, client_key, date, bucket, prefix,
         if app_id is None or client_key is None:
             raise ValueError("--app-id and --client-key arguments must be "
                              "specified for historical export")
-        exporter = LeanplumExporter(app_id, client_key)
-        exporter.export(date, bucket, prefix, bq_dataset, table_prefix, version, project)
+        exporter = LeanplumExporter(project, app_id, client_key)
+        exporter.export(date, bucket, prefix, bq_dataset, table_prefix, version)
     else:
         if s3_bucket is None:
             raise ValueError("--s3-bucket must be specified for streaming export")

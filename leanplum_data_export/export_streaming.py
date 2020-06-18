@@ -19,9 +19,8 @@ class StreamingLeanplumExporter(BaseLeanplumExporter):
     ]
 
     def __init__(self, project):
+        super().__init__(project)
         self.s3_client = boto3.client("s3")
-        self.bq_client = bigquery.Client(project=project)
-        self.gcs_client = storage.Client(project=project)
 
     @classmethod
     def extract_user_attributes(cls, session_data):
@@ -114,16 +113,16 @@ class StreamingLeanplumExporter(BaseLeanplumExporter):
         """
         pass
 
-    def write_to_gcs(self, file_path, data_type, bucket_name, prefix, date):
+    def write_to_gcs(self, file_path, data_type, bucket_ref, prefix, version, date):
         """
         Write file to GCS bucket so it can be transformed and loaded into Bigquery later
         This is also to circumvent the 1500 load job limit per table per day in Bigquery
         """
-        bucket = self.gcs_client.bucket(bucket_name)
-        gcs_path = os.path.join(prefix, date, data_type, file_path.name)
+        gcs_path = os.path.join(self.get_gcs_prefix(prefix, version, date),
+                                data_type, file_path.name)
 
         logging.info(f"Uploading {file_path.name} to gs://{gcs_path}")
-        blob = bucket.blob(gcs_path)
+        blob = bucket_ref.blob(gcs_path)
         blob.upload_from_filename(str(file_path))
 
     def write_to_csv(self, csv_writers, session_data, schemas):
@@ -184,6 +183,9 @@ class StreamingLeanplumExporter(BaseLeanplumExporter):
 
         filename_re = re.compile(r"^.*/\d{8}/export-.*-output-([0-9]+)$")
 
+        gcs_bucket_ref = self.gcs_client.bucket(gcs_bucket)
+        self.delete_gcs_prefix(gcs_bucket_ref, self.get_gcs_prefix(prefix, version, date))
+
         for key in data_file_keys:
             if filename_re.fullmatch(key) is None:  # not a data file
                 continue
@@ -192,6 +194,13 @@ class StreamingLeanplumExporter(BaseLeanplumExporter):
                 csv_file_paths = self.transform_data_file(key, schemas, data_dir, s3_bucket)
 
                 for data_type, csv_file_path in csv_file_paths.items():
-                    self.write_to_gcs(csv_file_path, data_type, gcs_bucket, prefix, date)
+                    self.write_to_gcs(csv_file_path, data_type, gcs_bucket_ref,
+                                      prefix, version, date)
 
-            break
+            break  # TODO: remove
+
+        self.create_external_tables(gcs_bucket, prefix, date, self.DATA_TYPES,
+                                    self.TMP_DATASET, dataset, table_prefix, version)
+        self.load_tables(self.TMP_DATASET, dataset, table_prefix, self.DATA_TYPES, version, date)
+        self.drop_external_tables(self.TMP_DATASET, dataset, table_prefix,
+                                  self.DATA_TYPES, version, date)

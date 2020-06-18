@@ -5,7 +5,7 @@ import re
 import requests
 import time
 
-from google.cloud import bigquery, exceptions, storage
+from google.cloud import bigquery, storage
 from pathlib import Path
 
 from .base_exporter import BaseLeanplumExporter
@@ -18,19 +18,16 @@ class LeanplumExporter(BaseLeanplumExporter):
     DEFAULT_EXPORT_FORMAT = "csv"
     FILENAME_RE = (r"^https://leanplum_export.storage.googleapis.com"
                    "/export-.*-output([a-z0-9]+)-([0-9]+)$")
-    TMP_DATASET = "tmp"
 
-    def __init__(self, app_id, client_key):
+    def __init__(self, project, app_id, client_key):
+        super().__init__(project)
+
         self.app_id = app_id
         self.bq_client_key = client_key
         self.filename_re = re.compile(LeanplumExporter.FILENAME_RE)
-        self.partition_field = "load_date"
 
     def export(self, date, bucket, prefix, dataset, table_prefix,
-               version, project, export_format=DEFAULT_EXPORT_FORMAT):
-        self.bq_client = bigquery.Client(project=project)
-        self.gcs_client = storage.Client()
-
+               version, export_format=DEFAULT_EXPORT_FORMAT):
         job_id = self.init_export(date, export_format)
         file_uris = self.get_files(job_id)
         tables = self.save_files(file_uris, bucket, prefix, date, export_format, version)
@@ -87,13 +84,7 @@ class LeanplumExporter(BaseLeanplumExporter):
         bucket = self.gcs_client.bucket(bucket_name)
         datatypes = set()
 
-        version_str = f"v{version}"
-        if prefix:
-            prefix = self.add_slash_if_not_present(prefix) + version_str
-        else:
-            prefix = version_str
-
-        prefix += f"/{date}"
+        prefix = self.get_gcs_prefix(prefix, version, date)
         self.delete_gcs_prefix(bucket, prefix)
 
         for uri in file_uris:
@@ -127,120 +118,3 @@ class LeanplumExporter(BaseLeanplumExporter):
             base_dir.rmdir()
 
         return datatypes
-
-    def delete_gcs_prefix(self, bucket, prefix):
-        blobs = self.gcs_client.list_blobs(bucket, prefix=prefix)
-
-        for page in blobs.pages:
-            bucket.delete_blobs(list(page))
-
-    def create_external_tables(self, bucket_name, prefix, date, tables,
-                               ext_dataset, dataset, table_prefix, version):  # TODO: move to parent class
-        gcs_loc = f"gs://{bucket_name}/{prefix}/v{version}/{date}"
-        dataset_ref = self.bq_client.dataset(ext_dataset)
-
-        for leanplum_name in tables:
-            table_name = self.get_table_name(table_prefix, leanplum_name, version, date, dataset)
-            logging.info(f"Creating external table {ext_dataset}.{table_name}")
-
-            table_ref = bigquery.TableReference(dataset_ref, table_name)
-            table = bigquery.Table(table_ref)
-
-            self.bq_client.delete_table(table, not_found_ok=True)
-
-            schema = [
-                bigquery.SchemaField(
-                    field["name"],
-                    field_type=field.get("type", "STRING"),
-                    mode=field.get("mode", "NULLABLE"),
-                )
-                for field in self.parse_schema(leanplum_name)
-            ]
-
-            external_config = bigquery.ExternalConfig('CSV')
-            external_config.source_uris = [f"{gcs_loc}/{leanplum_name}/*"]
-            external_config.schema = schema
-            external_config.options.skip_leading_rows = 1
-            external_config.options.allow_quoted_newlines = True
-
-            table.external_data_configuration = external_config
-
-            self.bq_client.create_table(table)
-
-    def delete_existing_data(self, dataset, table_prefix, tables, version, date):
-        for table in tables:
-            table_name = self.get_table_name(table_prefix, table, version)
-
-            delete_sql = (
-                f"DELETE FROM `{dataset}.{table_name}` "
-                f"WHERE {self.partition_field} = PARSE_DATE('%Y%m%d', '{date}')")
-
-            logging.info(f"Deleting data from {dataset}.{table_name}")
-            logging.info(delete_sql)
-            self.bq_client.query(delete_sql)
-
-    def load_tables(self, ext_dataset, dataset, table_prefix, tables, version, date):  # TODO move to parent class
-        destination_dataset = self.bq_client.dataset(dataset)
-
-        for table in tables:
-            ext_table_name = self.get_table_name(table_prefix, table, version, date, dataset)
-            table_name = self.get_table_name(table_prefix, table, version)
-
-            destination_table = bigquery.TableReference(destination_dataset, table_name)
-
-            select_sql = (
-                f"SELECT * PARSE_DATE('%Y%m%d', '{date}') AS {self.partition_field} "
-                f"FROM `{ext_dataset}.{ext_table_name}`")
-
-            if not self.get_table_exists(destination_table):
-                sql = (
-                    f"CREATE TABLE `{dataset}.{table_name}` "
-                    f"PARTITION BY {self.partition_field} AS {select_sql}")
-            else:
-                sql = f"INSERT INTO `{dataset}.{table_name}` {select_sql}"
-
-            logging.info((
-                f"Inserting into native table {dataset}.{table_name} "
-                f"from {ext_dataset}.{ext_table_name}"))
-            logging.info(sql)
-
-            job = self.bq_client.query(sql)
-            job.result()
-
-    def drop_external_tables(self, ext_dataset, dataset, table_prefix, tables, version, date):
-        dataset_ref = self.bq_client.dataset(ext_dataset)
-
-        for leanplum_name in tables:
-            table_name = self.get_table_name(table_prefix, leanplum_name, version, date, dataset)
-            table_ref = bigquery.TableReference(dataset_ref, table_name)
-            table = bigquery.Table(table_ref)
-
-            logging.info(f"Dropping table {ext_dataset}.{table_name}")
-
-            self.bq_client.delete_table(table)
-
-    def get_table_exists(self, table):
-        try:
-            table = self.bq_client.get_table(table)
-            return True
-        except exceptions.NotFound:
-            return False
-
-    def get_table_name(self, table_prefix, leanplum_name, version, date=None, dataset_prefix=None):
-        if table_prefix:
-            table_prefix += "_"
-        else:
-            table_prefix = ""
-
-        name = f"{table_prefix}{leanplum_name}_v{version}"
-        if dataset_prefix is not None:
-            name = f"{dataset_prefix}_{name}"
-        if date is not None:
-            name += f"_{date}"
-
-        return name
-
-    def add_slash_if_not_present(self, val):
-        if not val.endswith("/"):
-            val = f"{val}/"
-        return val
