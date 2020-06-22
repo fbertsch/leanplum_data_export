@@ -10,7 +10,6 @@ import boto3
 
 from .base_exporter import BaseLeanplumExporter
 
-# TODO: change class methods to static
 
 class StreamingLeanplumExporter(BaseLeanplumExporter):
 
@@ -21,76 +20,6 @@ class StreamingLeanplumExporter(BaseLeanplumExporter):
     def __init__(self, project):
         super().__init__(project)
         self.s3_client = boto3.client("s3")
-
-    @classmethod
-    def extract_user_attributes(cls, session_data):
-        attributes = []
-        for attribute, value in session_data.get("userAttributes", {}).items():
-            attributes.append({
-                "sessionId": int(session_data["sessionId"]),
-                "name": attribute,
-                "value": value,
-            })
-        return attributes
-
-    @classmethod
-    def extract_states(cls, session_data):
-        """
-        We don't seem to use states; csv export returns empty states csv's
-        stateId in the exported json is a random number assigned to an event according to
-        https://docs.leanplum.com/docs/reading-and-understanding-exported-sessions-data
-        """
-        return []
-
-    @classmethod
-    def extract_experiments(cls, session_data):
-        experiments = []
-        for experiment in session_data.get("experiments", []):
-            experiments.append({
-                "sessionId": int(session_data["sessionId"]),
-                "experimentId": experiment["id"],
-                "variantId": experiment["variantId"],
-            })
-        return experiments
-
-    @classmethod
-    def extract_events(cls, session_data):
-        events = []
-        event_parameters = []
-        for state in session_data.get("states", []):
-            for event in state.get("events", []):
-                events.append({
-                    "sessionId": int(session_data["sessionId"]),
-                    "stateId": state["stateId"],
-                    "eventId": event["eventId"],
-                    "eventName": event["name"],
-                    "start": event["time"],
-                    "value": event["value"],
-                    "info": event.get("info"),
-                    "timeUntilFirstForUser": event.get("timeUntilFirstForUser"),
-                })
-                for parameter, value in event.get("parameters", {}).items():
-                    event_parameters.append({
-                        "eventId": event["eventId"],
-                        "name": parameter,
-                        "value": value,
-                    })
-
-        return events, event_parameters
-
-    @classmethod
-    def extract_session(cls, session_data, session_columns):
-        session = {}
-        for name in session_columns:
-            session[name] = session_data.get(name)
-        session["timezoneOffset"] = session_data.get("timezoneOffsetSeconds")
-        session["osName"] = session_data.get("systemName")
-        session["osVersion"] = session_data.get("systemVersion")
-        session["userStart"] = session_data.get("firstRun")
-        session["start"] = session_data.get("time")
-        session["isDeveloper"] = session_data.get("isDeveloper", False)
-
-        return session
 
     def get_files(self, date, bucket, prefix):
         """
@@ -113,12 +42,6 @@ class StreamingLeanplumExporter(BaseLeanplumExporter):
             continuation_token["ContinuationToken"] = object_list["NextContinuationToken"]
 
         return data_file_keys
-
-    def write_to_bq(self, csv_file_path, dataset, table_prefix, table_name):
-        """
-        Load data in the given CSV into a bigquery table
-        """
-        pass
 
     def write_to_gcs(self, file_path, data_type, bucket_ref, prefix, version, date):
         """

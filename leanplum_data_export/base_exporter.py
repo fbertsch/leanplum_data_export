@@ -15,6 +15,76 @@ class BaseLeanplumExporter(object):
         self.bq_client = bigquery.Client(project=project)
         self.gcs_client = storage.Client(project=project)
 
+    @staticmethod
+    def extract_user_attributes(session_data):
+        attributes = []
+        for attribute, value in session_data.get("userAttributes", {}).items():
+            attributes.append({
+                "sessionId": int(session_data["sessionId"]),
+                "name": attribute,
+                "value": value,
+            })
+        return attributes
+
+    @staticmethod
+    def extract_states(session_data):
+        """
+        We don't seem to use states; csv export returns empty states csv's
+        stateId in the exported json is a random number assigned to an event according to
+        https://docs.leanplum.com/docs/reading-and-understanding-exported-sessions-data
+        """
+        return []
+
+    @staticmethod
+    def extract_experiments(session_data):
+        experiments = []
+        for experiment in session_data.get("experiments", []):
+            experiments.append({
+                "sessionId": int(session_data["sessionId"]),
+                "experimentId": experiment["id"],
+                "variantId": experiment["variantId"],
+            })
+        return experiments
+
+    @staticmethod
+    def extract_events(session_data):
+        events = []
+        event_parameters = []
+        for state in session_data.get("states", []):
+            for event in state.get("events", []):
+                events.append({
+                    "sessionId": int(session_data["sessionId"]),
+                    "stateId": state["stateId"],
+                    "eventId": event["eventId"],
+                    "eventName": event["name"],
+                    "start": event["time"],
+                    "value": event["value"],
+                    "info": event.get("info"),
+                    "timeUntilFirstForUser": event.get("timeUntilFirstForUser"),
+                })
+                for parameter, value in event.get("parameters", {}).items():
+                    event_parameters.append({
+                        "eventId": event["eventId"],
+                        "name": parameter,
+                        "value": value,
+                    })
+
+        return events, event_parameters
+
+    @staticmethod
+    def extract_session(session_data, session_columns):
+        session = {}
+        for name in session_columns:
+            session[name] = session_data.get(name)
+        session["timezoneOffset"] = session_data.get("timezoneOffsetSeconds")
+        session["osName"] = session_data.get("systemName")
+        session["osVersion"] = session_data.get("systemVersion")
+        session["userStart"] = session_data.get("firstRun")
+        session["start"] = session_data.get("time")
+        session["isDeveloper"] = session_data.get("isDeveloper", False)
+
+        return session
+
     @classmethod
     def parse_schema(cls, data_type):
         try:
