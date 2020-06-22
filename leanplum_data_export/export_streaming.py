@@ -7,10 +7,10 @@ import tempfile
 from pathlib import Path
 
 import boto3
-from google.cloud import bigquery, storage
 
 from .base_exporter import BaseLeanplumExporter
 
+# TODO: change class methods to static
 
 class StreamingLeanplumExporter(BaseLeanplumExporter):
 
@@ -83,6 +83,13 @@ class StreamingLeanplumExporter(BaseLeanplumExporter):
         session = {}
         for name in session_columns:
             session[name] = session_data.get(name)
+        session["timezoneOffset"] = session_data.get("timezoneOffsetSeconds")
+        session["osName"] = session_data.get("systemName")
+        session["osVersion"] = session_data.get("systemVersion")
+        session["userStart"] = session_data.get("firstRun")
+        session["start"] = session_data.get("time")
+        session["isDeveloper"] = session_data.get("isDeveloper", False)
+
         return session
 
     def get_files(self, date, bucket, prefix):
@@ -186,6 +193,7 @@ class StreamingLeanplumExporter(BaseLeanplumExporter):
         gcs_bucket_ref = self.gcs_client.bucket(gcs_bucket)
         self.delete_gcs_prefix(gcs_bucket_ref, self.get_gcs_prefix(prefix, version, date))
 
+        # Transform data file into csv for each data type and then save to GCS
         for key in data_file_keys:
             if filename_re.fullmatch(key) is None:  # not a data file
                 continue
@@ -201,6 +209,7 @@ class StreamingLeanplumExporter(BaseLeanplumExporter):
 
         self.create_external_tables(gcs_bucket, prefix, date, self.DATA_TYPES,
                                     self.TMP_DATASET, dataset, table_prefix, version)
+        self.delete_existing_data(dataset, table_prefix, self.DATA_TYPES, version, date)
         self.load_tables(self.TMP_DATASET, dataset, table_prefix, self.DATA_TYPES, version, date)
         self.drop_external_tables(self.TMP_DATASET, dataset, table_prefix,
                                   self.DATA_TYPES, version, date)
