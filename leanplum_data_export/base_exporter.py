@@ -8,7 +8,7 @@ from google.cloud import bigquery, exceptions, storage
 class BaseLeanplumExporter(object):
     TMP_DATASET = "tmp"
     DROP_COLS = {"sessions": {"lat", "lon"}}
-    SCHEMA_DIR = os.path.join(os.path.dirname(__file__), "schemas/")
+    SCHEMA_DIR = os.path.join(os.path.dirname(__file__), "schemas", "")
     PARTITION_FIELD = "load_date"
 
     def __init__(self, project):
@@ -88,10 +88,8 @@ class BaseLeanplumExporter(object):
     @classmethod
     def parse_schema(cls, data_type):
         try:
-            drop_cols = cls.DROP_COLS.get(data_type, {})
             with open(os.path.join(cls.SCHEMA_DIR, f"{data_type}.schema.json"), "r") as schema_file:
-                return [field for field in json.load(schema_file)
-                        if field["name"] not in drop_cols]
+                return [field for field in json.load(schema_file)]
         except FileNotFoundError:
             raise ValueError(f"Unrecognized table name encountered: {data_type}")
 
@@ -103,6 +101,9 @@ class BaseLeanplumExporter(object):
 
     def create_external_tables(self, bucket_name, prefix, date, tables,
                                ext_dataset, dataset, table_prefix, version):
+        """
+        Create external tables using CSVs in GCS as the data source
+        """
         gcs_loc = f"gs://{bucket_name}/{self.get_gcs_prefix(prefix, version, date)}"
         dataset_ref = self.bq_client.dataset(ext_dataset)
 
@@ -125,7 +126,7 @@ class BaseLeanplumExporter(object):
             ]
 
             external_config = bigquery.ExternalConfig('CSV')
-            external_config.source_uris = [f"{gcs_loc}/{leanplum_name}/*"]
+            external_config.source_uris = [os.path.join(gcs_loc, leanplum_name, "*")]
             external_config.schema = schema
             external_config.options.skip_leading_rows = 1
             external_config.options.allow_quoted_newlines = True
@@ -135,6 +136,9 @@ class BaseLeanplumExporter(object):
             self.bq_client.create_table(table)
 
     def delete_existing_data(self, dataset, table_prefix, tables, version, date):
+        """
+        Delete existing data in the target table partition
+        """
         for table in tables:
             table_name = self.get_table_name(table_prefix, table, version)
 
@@ -147,6 +151,9 @@ class BaseLeanplumExporter(object):
             self.bq_client.query(delete_sql)
 
     def load_tables(self, ext_dataset, dataset, table_prefix, tables, version, date):
+        """
+        Load data from external tables into final tables using SELECT statement
+        """
         destination_dataset = self.bq_client.dataset(dataset)
 
         for table in tables:
@@ -155,8 +162,13 @@ class BaseLeanplumExporter(object):
 
             destination_table = bigquery.TableReference(destination_dataset, table_name)
 
+            drop_cols = self.DROP_COLS.get(table, set())
+            drop_clause = ""
+            if drop_cols:
+                drop_clause = f"EXCEPT ({','.join(sorted(drop_cols))})"
+
             select_sql = (
-                f"SELECT *, PARSE_DATE('%Y%m%d', '{date}') AS {self.PARTITION_FIELD} "
+                f"SELECT * {drop_clause}, PARSE_DATE('%Y%m%d', '{date}') AS {self.PARTITION_FIELD} "
                 f"FROM `{ext_dataset}.{ext_table_name}`")
 
             if not self.get_table_exists(destination_table):
@@ -175,6 +187,9 @@ class BaseLeanplumExporter(object):
             job.result()
 
     def drop_external_tables(self, ext_dataset, dataset, table_prefix, tables, version, date):
+        """
+        Delete temporary tables used for loading data into final tables
+        """
         dataset_ref = self.bq_client.dataset(ext_dataset)
 
         for leanplum_name in tables:
@@ -209,4 +224,4 @@ class BaseLeanplumExporter(object):
 
     @classmethod
     def get_gcs_prefix(cls, prefix, version, date):
-        return os.path.join(prefix, f"v{version}", date)
+        return os.path.join(prefix, f"v{version}", date, "")

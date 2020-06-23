@@ -8,23 +8,17 @@ from unittest.mock import patch, Mock, PropertyMock
 from leanplum_data_export.export import LeanplumExporter
 from google.cloud import bigquery, exceptions
 
-
+project_id = "projectId"
 app_id = "appid"
 client_key = "clientkey"
 
 
 @pytest.fixture
 def exporter():
-    return LeanplumExporter(app_id, client_key)
+    return LeanplumExporter(project_id, app_id, client_key)
 
 
 class TestExporter(object):
-
-    def test_add_slash(self, exporter):
-        assert exporter.add_slash_if_not_present("hello") == "hello/"
-
-    def test_dont_add_slash(self, exporter):
-        assert exporter.add_slash_if_not_present("hello/") == "hello/"
 
     @responses.activate
     def test_init_export(self, exporter):
@@ -248,8 +242,8 @@ class TestExporter(object):
             with open(filename, "rb") as f:
                 self.file_contents = f.read()
 
-        with patch('leanplum_data_export.export.bigquery', spec=True) as MockBq:
-            with patch('leanplum_data_export.export.storage', spec=True) as MockStorage:
+        with patch('leanplum_data_export.base_exporter.bigquery', spec=True) as MockBq:
+            with patch('leanplum_data_export.base_exporter.storage', spec=True) as MockStorage:
                 mock_bucket, mock_client, mock_blob = Mock(), Mock(), Mock()
 
                 type(mock_blob).pages = PropertyMock(return_value=[])
@@ -257,18 +251,19 @@ class TestExporter(object):
                 mock_client.bucket.return_value = mock_bucket
                 mock_bucket.blob.return_value = mock_blob
                 mock_blob.upload_from_filename.side_effect = set_contents
-                MockStorage.Client.return_value = mock_client
 
                 mock_bq_client, mock_dataset_ref = Mock(), Mock()
                 mock_table_ref, mock_table, mock_config = Mock(), Mock(), Mock()
                 mock_bq_client.dataset.return_value = mock_dataset_ref
                 mock_bq_client.get_table.side_effect = exceptions.NotFound('')
-                MockBq.Client.return_value = mock_bq_client
                 MockBq.TableReference.return_value = mock_table_ref
                 MockBq.Table.return_value = mock_table
                 MockBq.ExternalConfig.return_value = mock_config
 
-                exporter.export(date, bucket, prefix, dataset_name, "", 1, "test-project")
+                exporter.gcs_client = mock_client
+                exporter.bq_client = mock_bq_client
+
+                exporter.export(date, bucket, prefix, dataset_name, "", 1)
 
                 suffix = f"sessions/0.csv"
                 mock_client.bucket.assert_called_with(bucket)
@@ -343,8 +338,8 @@ class TestExporter(object):
             with open(filename, "rb") as f:
                 self.file_contents = f.read()
 
-        with patch('leanplum_data_export.export.bigquery', spec=True) as MockBq:
-            with patch('leanplum_data_export.export.storage', spec=True) as MockStorage:
+        with patch('leanplum_data_export.base_exporter.bigquery', spec=True) as MockBq:
+            with patch('leanplum_data_export.base_exporter.storage', spec=True) as MockStorage:
                 mock_bucket, mock_client, mock_blob = Mock(), Mock(), Mock()
 
                 type(mock_blob).pages = PropertyMock(return_value=[])
@@ -352,17 +347,18 @@ class TestExporter(object):
                 mock_client.bucket.return_value = mock_bucket
                 mock_bucket.blob.return_value = mock_blob
                 mock_blob.upload_from_filename.side_effect = set_contents
-                MockStorage.Client.return_value = mock_client
 
                 mock_bq_client, mock_dataset_ref = Mock(), Mock()
                 mock_table_ref, mock_table, mock_config = Mock(), Mock(), Mock()
                 mock_bq_client.dataset.return_value = mock_dataset_ref
-                MockBq.Client.return_value = mock_bq_client
                 MockBq.TableReference.return_value = mock_table_ref
                 MockBq.Table.return_value = mock_table
                 MockBq.ExternalConfig.return_value = mock_config
 
-                exporter.export(date, bucket, prefix, dataset_name, "", 1, "test-project")
+                exporter.gcs_client = mock_client
+                exporter.bq_client = mock_bq_client
+
+                exporter.export(date, bucket, prefix, dataset_name, "", 1)
 
                 suffix = f"sessions/0.csv"
                 mock_client.bucket.assert_called_with(bucket)
@@ -436,11 +432,10 @@ class TestExporter(object):
         tables = ["sessions"]
         table_prefix = "prefix"
 
-        with patch('leanplum_data_export.export.bigquery', spec=True) as MockBq:
+        with patch('leanplum_data_export.base_exporter.bigquery', spec=True) as MockBq:
             mock_bq_client, mock_dataset_ref = Mock(), Mock()
             mock_table_ref, mock_table, mock_config = Mock(), Mock(), Mock()
             mock_bq_client.dataset.return_value = mock_dataset_ref
-            MockBq.Client.return_value = mock_bq_client
             MockBq.TableReference.return_value = mock_table_ref
             MockBq.Table.return_value = mock_table
             MockBq.ExternalConfig.return_value = mock_config
@@ -472,7 +467,7 @@ class TestExporter(object):
         tables = ["sessions"]
         table_prefix = "prefix"
 
-        with patch('leanplum_data_export.export.bigquery', spec=True) as MockBq:
+        with patch('leanplum_data_export.base_exporter.bigquery', spec=True) as MockBq:
             mock_bq_client = Mock()
             exporter.bq_client = mock_bq_client
             mock_external_config = PropertyMock()
@@ -493,7 +488,7 @@ class TestExporter(object):
         tables = ["some_unknown_table"]
         table_prefix = "prefix"
 
-        with patch('leanplum_data_export.export.bigquery', spec=True) as MockBq:
+        with patch('leanplum_data_export.base_exporter.bigquery', spec=True) as MockBq:
             mock_bq_client = Mock()
             exporter.bq_client = mock_bq_client
             mock_external_config = PropertyMock()

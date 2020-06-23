@@ -1,11 +1,9 @@
-import json
 import logging
 import os
 import re
 import requests
 import time
 
-from google.cloud import bigquery, storage
 from pathlib import Path
 
 from .base_exporter import BaseLeanplumExporter
@@ -111,7 +109,7 @@ class LeanplumExporter(BaseLeanplumExporter):
                             opened.write(chunk)
 
             logging.info(f"Uploading to gs://{bucket_name}/{prefix}/{local_filename}")
-            blob = bucket.blob(f"{prefix}/{local_filename}")
+            blob = bucket.blob(os.path.join(prefix, local_filename))
             blob.upload_from_filename(local_filename)
 
             f.unlink()
