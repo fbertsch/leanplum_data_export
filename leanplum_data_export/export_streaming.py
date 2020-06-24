@@ -76,14 +76,14 @@ class StreamingLeanplumExporter(BaseLeanplumExporter):
 
     def transform_data_file(self, data_file_key, schemas, data_dir, bucket):
         """
-        Get data file contents and convert to CSV for each data type and
-        return paths to the files
+        Get data file contents and convert from JSON to CSV for each data type and
+        return paths to the files.
+        The JSON data file is not in a format that can be loaded into bigquery.
         """
         logging.info(f"Exporting {data_file_key}")
-        data_file = self.s3_client.get_object(
-            Bucket=bucket,
-            Key=data_file_key,
-        )
+
+        # downloading the entire file at once is much faster than using boto3 s3 streaming
+        self.s3_client.download_file(bucket, data_file_key, os.path.join(data_dir, "data.ndjson"))
 
         file_id = "-".join(data_file_key.split("-")[2:])
         csv_file_paths = {data_type: Path(os.path.join(data_dir, f"{data_type}-{file_id}.csv"))
@@ -91,14 +91,13 @@ class StreamingLeanplumExporter(BaseLeanplumExporter):
         csv_files = {data_type: open(file_path, "w")
                      for data_type, file_path in csv_file_paths.items()}
         try:
-            csv_writers = {data_type: csv.DictWriter(csv_files[data_type], schemas[data_type])
+            csv_writers = {data_type: csv.DictWriter(csv_files[data_type], schemas[data_type],
+                                                     extrasaction="ignore")
                            for data_type in self.DATA_TYPES}
-            for csv_writer in csv_writers.values():
-                csv_writer.writeheader()
-
-            for line in data_file["Body"].iter_lines():
-                session_data = json.loads(line)
-                self.write_to_csv(csv_writers, session_data, schemas)
+            with open(os.path.join(data_dir, "data.ndjson")) as f:
+                for line in f:
+                    session_data = json.loads(line)
+                    self.write_to_csv(csv_writers, session_data, schemas)
         finally:
             for csv_file in csv_files.values():
                 csv_file.close()
