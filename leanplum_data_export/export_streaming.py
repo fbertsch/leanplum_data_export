@@ -129,7 +129,7 @@ class StreamingLeanplumExporter(BaseLeanplumExporter):
                     self.write_to_gcs(csv_file_path, data_type, gcs_bucket_ref,
                                       prefix, version, date)
 
-            #break  # TODO: remove
+            break  # TODO: remove
 
         self.create_external_tables(gcs_bucket, prefix, date, self.DATA_TYPES,
                                     self.TMP_DATASET, dataset, table_prefix, version)

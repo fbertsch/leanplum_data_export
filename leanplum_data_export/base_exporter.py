@@ -73,14 +73,17 @@ class BaseLeanplumExporter(object):
 
     @staticmethod
     def extract_session(session_data, session_columns):
+        # mapping from name in destination table to name in source data
+        field_name_mappings = {
+            "timezoneOffset": "timezoneOffsetSeconds",
+            "osName": "systemName",
+            "osVersion": "systemVersion",
+            "userStart": "firstRun",
+            "start": "time",
+        }
         session = {}
         for name in session_columns:
-            session[name] = session_data.get(name)
-        session["timezoneOffset"] = session_data.get("timezoneOffsetSeconds")
-        session["osName"] = session_data.get("systemName")
-        session["osVersion"] = session_data.get("systemVersion")
-        session["userStart"] = session_data.get("firstRun")
-        session["start"] = session_data.get("time")
+            session[name] = session_data.get(field_name_mappings.get(name, name))
         session["isDeveloper"] = session_data.get("isDeveloper", False)
 
         return session

@@ -6,7 +6,7 @@ import re
 
 from unittest.mock import patch, Mock, PropertyMock
 from leanplum_data_export.export import LeanplumExporter
-from google.cloud import bigquery, exceptions
+from google.cloud import exceptions
 
 app_id = "appid"
 client_key = "clientkey"
@@ -394,104 +394,3 @@ class TestExporter(object):
             mock_bq_client.query.assert_any_call(insert_query)
 
             mock_bq_client.delete_table.assert_any_call(mock_table)
-
-    def test_delete_gcs_prefix(self, exporter):
-        client, bucket, blobs = Mock(), Mock(), Mock()
-        prefix = "hello"
-
-        type(blobs).pages = PropertyMock(return_value=[["hello/world"]])
-        client.list_blobs.return_value = blobs
-
-        exporter.gcs_client = client
-        exporter.delete_gcs_prefix(bucket, prefix)
-
-        client.list_blobs.assert_called_with(bucket, prefix=prefix)
-        bucket.delete_blobs.assert_called_with(blobs.pages[0])
-
-    def test_delete_gcs_prefix_pagination(self, exporter):
-        client, bucket, blobs = Mock(), Mock(), Mock()
-        prefix = "hello"
-
-        type(blobs).pages = PropertyMock(return_value=[["hello/world"] * 1000] * 5)
-        client.list_blobs.return_value = blobs
-
-        exporter.gcs_client = client
-        exporter.delete_gcs_prefix(bucket, prefix)
-
-        assert bucket.delete_blobs.call_count == 5
-
-    def test_created_external_tables(self, exporter):
-        date = "20190101"
-        bucket = 'abucket'
-        prefix = 'aprefix'
-        ext_dataset_name = "ext_dataset"
-        dataset_name = "leanplum_dataset"
-        tables = ["sessions"]
-        table_prefix = "prefix"
-
-        with patch('leanplum_data_export.base_exporter.bigquery', spec=True) as MockBq:
-            mock_bq_client, mock_dataset_ref = Mock(), Mock()
-            mock_table_ref, mock_table, mock_config = Mock(), Mock(), Mock()
-            mock_bq_client.dataset.return_value = mock_dataset_ref
-            MockBq.TableReference.return_value = mock_table_ref
-            MockBq.Table.return_value = mock_table
-            MockBq.ExternalConfig.return_value = mock_config
-
-            exporter.bq_client = mock_bq_client
-            exporter.create_external_tables(
-                bucket, prefix, date, tables, ext_dataset_name, dataset_name, table_prefix, 1)
-
-            mock_bq_client.dataset.assert_any_call(ext_dataset_name)
-            mock_bq_client.delete_table.assert_called_with(mock_table, not_found_ok=True)
-            MockBq.TableReference.assert_any_call(
-                mock_dataset_ref,
-                f"{dataset_name}_{table_prefix}_sessions_v1_{date}"
-            )
-            MockBq.Table.assert_any_call(mock_table_ref)
-            MockBq.ExternalConfig.assert_any_call("CSV")
-
-            expected_source_uris = [f"gs://{bucket}/{prefix}/v1/{date}/sessions/*"]
-            assert mock_config.source_uris == expected_source_uris
-            assert mock_table.external_data_configuration == mock_config
-            mock_bq_client.create_table.assert_any_call(mock_table)
-
-    def test_external_table_can_read_schema(self, exporter):
-        date = "20190101"
-        bucket = 'abucket'
-        prefix = 'aprefix'
-        ext_dataset_name = "ext_dataset"
-        dataset_name = "leanplum_dataset"
-        tables = ["sessions"]
-        table_prefix = "prefix"
-
-        with patch('leanplum_data_export.base_exporter.bigquery', spec=True) as MockBq:
-            mock_bq_client = Mock()
-            exporter.bq_client = mock_bq_client
-            mock_external_config = PropertyMock()
-            MockBq.SchemaField.side_effect = bigquery.SchemaField
-            MockBq.ExternalConfig.return_value = mock_external_config
-
-            exporter.create_external_tables(
-                bucket, prefix, date, tables, ext_dataset_name, dataset_name, table_prefix, 1)
-
-            assert len(mock_external_config.schema) > 0
-
-    def test_external_table_unrecognized_table(self, exporter):
-        date = "20190101"
-        bucket = 'abucket'
-        prefix = 'aprefix'
-        ext_dataset_name = "ext_dataset"
-        dataset_name = "leanplum_dataset"
-        tables = ["some_unknown_table"]
-        table_prefix = "prefix"
-
-        with patch('leanplum_data_export.base_exporter.bigquery', spec=True) as MockBq:
-            mock_bq_client = Mock()
-            exporter.bq_client = mock_bq_client
-            mock_external_config = PropertyMock()
-            MockBq.SchemaField.side_effect = bigquery.SchemaField
-            MockBq.ExternalConfig.return_value = mock_external_config
-
-            with pytest.raises(Exception):
-                exporter.create_external_tables(
-                    bucket, prefix, date, tables, ext_dataset_name, dataset_name, table_prefix, 1)
