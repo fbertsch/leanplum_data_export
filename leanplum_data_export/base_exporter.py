@@ -128,6 +128,8 @@ class BaseLeanplumExporter(object):
             external_config = bigquery.ExternalConfig('CSV')
             external_config.source_uris = [os.path.join(gcs_loc, leanplum_name, "*")]
             external_config.schema = schema
+            # there are rare cases of corrupted values that should be ignored instead of failing
+            external_config.max_bad_records = 100
             external_config.options.skip_leading_rows = 1
             external_config.options.allow_quoted_newlines = True
 

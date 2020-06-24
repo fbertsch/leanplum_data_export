@@ -94,6 +94,8 @@ class StreamingLeanplumExporter(BaseLeanplumExporter):
             csv_writers = {data_type: csv.DictWriter(csv_files[data_type], schemas[data_type],
                                                      extrasaction="ignore")
                            for data_type in self.DATA_TYPES}
+            for csv_writer in csv_writers.values():
+                csv_writer.writeheader()
             with open(os.path.join(data_dir, "data.ndjson")) as f:
                 for line in f:
                     session_data = json.loads(line)
