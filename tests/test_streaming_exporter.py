@@ -221,5 +221,3 @@ class TestStreamingExporter(object):
             call("file4", ANY, ANY, ANY, ANY, ANY),
         ])
         exporter.delete_gcs_prefix.assert_not_called()
-
-
