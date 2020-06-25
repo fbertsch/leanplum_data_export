@@ -2,7 +2,7 @@ import json
 import os
 import tempfile
 from pathlib import Path
-from unittest.mock import patch, Mock, PropertyMock
+from unittest.mock import patch, Mock
 
 import boto3
 import pytest
@@ -15,15 +15,20 @@ from leanplum_data_export.export_streaming import StreamingLeanplumExporter
 def exporter():
     return StreamingLeanplumExporter("projectId")
 
+
 @pytest.fixture
 def sample_data():
     with open(os.path.join(os.path.dirname(__file__), "sample.ndjson")) as f:
         return [json.loads(line) for line in f.readlines()]
 
+
 class TestStreamingExporter(object):
 
     @mock_s3
-    def test_get_files_data_file_filtering(self, exporter):
+    def test_get_files_data_file_filtering(self):
+        # can't use fixture because it's instantiated before moto
+        exporter = StreamingLeanplumExporter("projectId")
+
         bucket_name = "bucket"
         date = "20200601"
         prefix = "firefox"
@@ -53,6 +58,7 @@ class TestStreamingExporter(object):
 
     @mock_s3
     def test_get_files_pagination(self):
+        # can't use fixture because it's instantiated before moto
         streaming_exporter = StreamingLeanplumExporter("projectId")
         bucket_name = "bucket"
         date = "20200601"
@@ -110,7 +116,10 @@ class TestStreamingExporter(object):
         assert csv_writers["eventparameters"].writerow.call_count == 4
 
     @mock_s3
-    def test_transform_data_file_data_read(self, exporter):
+    def test_transform_data_file_data_read(self):
+        # can't use fixture because it's instantiated before moto
+        exporter = StreamingLeanplumExporter("projectId")
+
         bucket_name = "bucket"
         data_file_key = "data_file"
         schemas = {data_type: ["field"] for data_type in exporter.DATA_TYPES}
