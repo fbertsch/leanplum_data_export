@@ -228,5 +228,8 @@ class BaseLeanplumExporter(object):
         return name
 
     @classmethod
-    def get_gcs_prefix(cls, prefix, version, date):
-        return os.path.join(prefix, f"v{version}", date, "")
+    def get_gcs_prefix(cls, prefix, version, date, data_type=None):
+        if data_type is None:
+            return os.path.join(prefix, f"v{version}", date, "")
+        else:
+            return os.path.join(prefix, f"v{version}", date, data_type, "")

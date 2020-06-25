@@ -5,7 +5,7 @@ import os
 import re
 import tempfile
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Set, Union
 
 import boto3
 
@@ -17,6 +17,7 @@ class StreamingLeanplumExporter(BaseLeanplumExporter):
     DATA_TYPES = [
         "eventparameters", "events", "experiments", "sessions", "states", "userattributes"
     ]
+    FILE_HISTORY_PREFIX = "file_history"
 
     def __init__(self, project):
         super().__init__(project)
@@ -48,18 +49,38 @@ class StreamingLeanplumExporter(BaseLeanplumExporter):
 
         return data_file_keys
 
-    def write_to_gcs(self, file_path: Path, data_type: str, bucket: str,
+    def get_previously_imported_files(self, bucket: str, prefix: str,
+                                      version: str, date: str) -> Set[str]:
+        """
+        Get file names of data files that have already been imported into GCS
+        """
+        blobs = self.gcs_client.list_blobs(
+            bucket,
+            prefix=self.get_gcs_prefix(prefix, version, date, self.FILE_HISTORY_PREFIX)
+        )
+        file_names = []
+        for page in blobs.pages:
+            for blob in page:
+                file_names.append(os.path.basename(blob.name))
+
+        return set(file_names)
+
+    def write_to_gcs(self, file_path: Union[Path, str], data_type: str, bucket: str,
                      prefix: str, version: str, date: str) -> None:
         """
-        Write file to GCS bucket so it can be transformed and loaded into Bigquery later
-        This is also to circumvent the 1500 load job limit per table per day in Bigquery
+        Write file to GCS bucket
+        If a Path is given as file_path, the file is uploaded
+        If a string is given as file_path, an empty file is uploaded
         """
-        gcs_path = os.path.join(self.get_gcs_prefix(prefix, version, date),
-                                data_type, file_path.name)
+        file_name = file_path if isinstance(file_path, str) else file_path.name
+        gcs_path = os.path.join(self.get_gcs_prefix(prefix, version, date, data_type), file_name)
 
-        logging.info(f"Uploading {file_path.name} to gs://{gcs_path}")
+        logging.info(f"Uploading {file_name} to gs://{gcs_path}")
         blob = self.gcs_client.bucket(bucket).blob(gcs_path)
-        blob.upload_from_filename(str(file_path))
+        if isinstance(file_path, str):
+            blob.upload_from_string("")
+        else:
+            blob.upload_from_filename(str(file_path))
 
     def write_to_csv(self, csv_writers: Dict[str, csv.DictWriter], session_data: Dict,
                      schemas: Dict[str, List[str]]) -> None:
@@ -115,22 +136,33 @@ class StreamingLeanplumExporter(BaseLeanplumExporter):
         return csv_file_paths
 
     def export(self, date: str, s3_bucket: str, gcs_bucket: str, prefix: str, dataset: str,
-               table_prefix: str, version: str) -> None:
+               table_prefix: str, version: str, clean: bool) -> None:
         schemas = {data_type: [field["name"] for field in self.parse_schema(data_type)]
                    for data_type in self.DATA_TYPES}
 
         data_file_keys = self.get_files(date, s3_bucket, prefix)
 
-        self.delete_gcs_prefix(self.gcs_client.bucket(gcs_bucket),
-                               self.get_gcs_prefix(prefix, version, date))
+        if clean:
+            self.delete_gcs_prefix(self.gcs_client.bucket(gcs_bucket),
+                                   self.get_gcs_prefix(prefix, version, date))
+
+        file_history = self.get_previously_imported_files(gcs_bucket, prefix, version, date)
 
         # Transform data file into csv for each data type and then save to GCS
-        for key in data_file_keys:
+        for i, key in enumerate(data_file_keys):
+            data_file_name = os.path.basename(key)
+            if data_file_name in file_history:
+                logging.info(f"Skipping export for {data_file_name}")
+                continue
+
             with tempfile.TemporaryDirectory() as data_dir:
                 csv_file_paths = self.transform_data_file(key, schemas, data_dir, s3_bucket)
 
                 for data_type, csv_file_path in csv_file_paths.items():
                     self.write_to_gcs(csv_file_path, data_type, gcs_bucket, prefix, version, date)
+
+            self.write_to_gcs(data_file_name, self.FILE_HISTORY_PREFIX,
+                              gcs_bucket, prefix, version, date)
 
         self.create_external_tables(gcs_bucket, prefix, date, self.DATA_TYPES,
                                     self.TMP_DATASET, dataset, table_prefix, version)

@@ -108,7 +108,7 @@ class LeanplumExporter(BaseLeanplumExporter):
                         if chunk:
                             opened.write(chunk)
 
-            logging.info(f"Uploading to gs://{bucket_name}/{prefix}/{local_filename}")
+            logging.info(f"Uploading to gs://{os.path.join(bucket_name, prefix, local_filename)}")
             blob = bucket.blob(os.path.join(prefix, local_filename))
             blob.upload_from_filename(local_filename)
 

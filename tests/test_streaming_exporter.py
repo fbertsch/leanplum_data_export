@@ -2,7 +2,7 @@ import json
 import os
 import tempfile
 from pathlib import Path
-from unittest.mock import patch, Mock
+from unittest.mock import patch, Mock, call, ANY
 
 import boto3
 import pytest
@@ -90,7 +90,7 @@ class TestStreamingExporter(object):
         assert expected == set(retrieved_keys)
 
     @patch("google.cloud.storage.Client")
-    def test_write_to_gcs_correct_path(self, mock_gcs, exporter):
+    def test_write_to_gcs_upload_file(self, mock_gcs, exporter):
         mock_bucket, mock_blob = Mock(), Mock()
         mock_gcs.bucket.return_value = mock_bucket
         mock_bucket.blob.return_value = mock_blob
@@ -100,6 +100,20 @@ class TestStreamingExporter(object):
 
         mock_bucket.blob.assert_called_once_with("firefox/v1/20200601/sessions/c")
         mock_blob.upload_from_filename.assert_called_once_with("/a/b/c")
+        mock_blob.upload_from_string.assert_not_called()
+
+    @patch("google.cloud.storage.Client")
+    def test_write_to_gcs_empty_file(self, mock_gcs, exporter):
+        mock_bucket, mock_blob = Mock(), Mock()
+        mock_gcs.bucket.return_value = mock_bucket
+        mock_bucket.blob.return_value = mock_blob
+
+        exporter.gcs_client = mock_gcs
+        exporter.write_to_gcs("c", "sessions", "bucket", "firefox", "1", "20200601")
+
+        mock_bucket.blob.assert_called_once_with("firefox/v1/20200601/sessions/c")
+        mock_blob.upload_from_filename.assert_not_called()
+        mock_blob.upload_from_string.assert_called_once_with("")
 
     def test_write_to_csv_write_count(self, exporter, sample_data):
         csv_writers = {data_type: Mock() for data_type in exporter.DATA_TYPES}
@@ -138,6 +152,7 @@ class TestStreamingExporter(object):
 
     def test_export_file_count(self, exporter):
         exporter.get_files = Mock()
+        exporter.get_previously_imported_files = Mock()
         exporter.delete_gcs_prefix = Mock()
         exporter.create_external_tables = Mock()
         exporter.delete_existing_data = Mock()
@@ -147,15 +162,23 @@ class TestStreamingExporter(object):
         exporter.write_to_gcs = Mock()
 
         exporter.transform_data_file.return_value = {
-            "a": 1,
-            "b": 2,
+            "a": "1",
+            "b": "2",
         }
-        exporter.get_files.return_value = list(range(1, 1000))
+        exporter.get_previously_imported_files.return_value = set()
 
-        exporter.export("20200601", "s3", "gcs", "prefix", "dataset", "table_prefix", "version")
+        files = [str(i) for i in range(1, 1000)]
 
+        exporter.get_files.return_value = files
+        exporter.export("20200601", "s3", "gcs", "prefix", "dataset",
+                        "table_prefix", "version", True)
+
+        exporter.transform_data_file.assert_has_calls(
+            [call(i, ANY, ANY, ANY) for i in files],
+            any_order=True
+        )
         assert exporter.transform_data_file.call_count == 999
-        assert exporter.write_to_gcs.call_count == 1998
+        assert exporter.write_to_gcs.call_count == 2997
 
         # assert all clean up and creation steps are done
         exporter.delete_gcs_prefix.assert_called_once()
@@ -163,3 +186,40 @@ class TestStreamingExporter(object):
         exporter.delete_existing_data.assert_called_once()
         exporter.load_tables.assert_called_once()
         exporter.drop_external_tables.assert_called_once()
+
+    def test_export_previously_written_files(self, exporter):
+        exporter.get_files = Mock()
+        exporter.get_files.return_value = [
+            "a/b/file1",
+            "a/b/file2",
+            "a/b/file3",
+            "a/b/file4",
+        ]
+        exporter.get_previously_imported_files = Mock()
+        exporter.get_previously_imported_files.return_value = [
+            "c/d/file1",
+            "file3",
+        ]
+        exporter.transform_data_file = Mock()
+        exporter.transform_data_file.return_value = {}
+        exporter.write_to_gcs = Mock()
+        exporter.delete_gcs_prefix = Mock()
+        exporter.create_external_tables = Mock()
+        exporter.delete_existing_data = Mock()
+        exporter.load_tables = Mock()
+        exporter.drop_external_tables = Mock()
+
+        exporter.export("20200601", "s3", "gcs", "prefix", "dataset",
+                        "table_prefix", "version", False)
+
+        exporter.transform_data_file.assert_has_calls([
+            call("a/b/file2", ANY, ANY, ANY),
+            call("a/b/file4", ANY, ANY, ANY),
+        ])
+        exporter.write_to_gcs.assert_has_calls([
+            call("file2", ANY, ANY, ANY, ANY, ANY),
+            call("file4", ANY, ANY, ANY, ANY, ANY),
+        ])
+        exporter.delete_gcs_prefix.assert_not_called()
+
+
