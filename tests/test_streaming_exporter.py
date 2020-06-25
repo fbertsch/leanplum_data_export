@@ -163,5 +163,3 @@ class TestStreamingExporter(object):
         exporter.delete_existing_data.assert_called_once()
         exporter.load_tables.assert_called_once()
         exporter.drop_external_tables.assert_called_once()
-
-
