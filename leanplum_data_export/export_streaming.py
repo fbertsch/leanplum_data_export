@@ -5,6 +5,7 @@ import os
 import re
 import tempfile
 from pathlib import Path
+from typing import Dict, List
 
 import boto3
 
@@ -21,10 +22,12 @@ class StreamingLeanplumExporter(BaseLeanplumExporter):
         super().__init__(project)
         self.s3_client = boto3.client("s3")
 
-    def get_files(self, date, bucket, prefix):
+    def get_files(self, date: str, bucket: str, prefix: str, max_keys: int = None) -> List[str]:
         """
         Get the s3 keys of the data files in the given bucket
         """
+        max_keys = {} if max_keys is None else {"MaxKeys": max_keys}  # for testing pagination
+        filename_re = re.compile(r"^.*/\d{8}/export-.*-output-([0-9]+)$")
         data_file_keys = []
 
         continuation_token = {}  # value used for pagination
@@ -33,8 +36,10 @@ class StreamingLeanplumExporter(BaseLeanplumExporter):
                 Bucket=bucket,
                 Prefix=os.path.join(prefix, date, "export-"),
                 **continuation_token,
+                **max_keys,
             )
-            data_file_keys.extend([content["Key"] for content in object_list["Contents"]])
+            data_file_keys.extend([content["Key"] for content in object_list["Contents"]
+                                   if filename_re.fullmatch(content["Key"])])
 
             if not object_list["IsTruncated"]:
                 break
@@ -43,7 +48,8 @@ class StreamingLeanplumExporter(BaseLeanplumExporter):
 
         return data_file_keys
 
-    def write_to_gcs(self, file_path, data_type, bucket_ref, prefix, version, date):
+    def write_to_gcs(self, file_path: Path, data_type: str, bucket: str,
+                     prefix: str, version: str, date: str) -> None:
         """
         Write file to GCS bucket so it can be transformed and loaded into Bigquery later
         This is also to circumvent the 1500 load job limit per table per day in Bigquery
@@ -52,15 +58,16 @@ class StreamingLeanplumExporter(BaseLeanplumExporter):
                                 data_type, file_path.name)
 
         logging.info(f"Uploading {file_path.name} to gs://{gcs_path}")
-        blob = bucket_ref.blob(gcs_path)
+        blob = self.gcs_client.bucket(bucket).blob(gcs_path)
         blob.upload_from_filename(str(file_path))
 
-    def write_to_csv(self, csv_writers, session_data, schemas):
+    def write_to_csv(self, csv_writers: Dict[str, csv.DictWriter], session_data: Dict,
+                     schemas: Dict[str, List[str]]) -> None:
         for user_attribute in self.extract_user_attributes(session_data):
             csv_writers["userattributes"].writerow(user_attribute)
 
         for state in self.extract_states(session_data):
-            csv_writers["sessions"].writerow(state)
+            csv_writers["states"].writerow(state)
 
         for experiment in self.extract_experiments(session_data):
             csv_writers["experiments"].writerow(experiment)
@@ -74,7 +81,8 @@ class StreamingLeanplumExporter(BaseLeanplumExporter):
         for event_parameter in event_parameters:
             csv_writers["eventparameters"].writerow(event_parameter)
 
-    def transform_data_file(self, data_file_key, schemas, data_dir, bucket):
+    def transform_data_file(self, data_file_key: str, schemas: Dict[str, List[str]],
+                            data_dir: str, bucket: str) -> Dict[str, Path]:
         """
         Get data file contents and convert from JSON to CSV for each data type and
         return paths to the files.
@@ -106,30 +114,23 @@ class StreamingLeanplumExporter(BaseLeanplumExporter):
 
         return csv_file_paths
 
-    def export(self, date, s3_bucket, gcs_bucket, prefix, dataset, table_prefix, version):
+    def export(self, date: str, s3_bucket: str, gcs_bucket: str, prefix: str, dataset: str,
+               table_prefix: str, version: str) -> None:
         schemas = {data_type: [field["name"] for field in self.parse_schema(data_type)]
                    for data_type in self.DATA_TYPES}
 
         data_file_keys = self.get_files(date, s3_bucket, prefix)
 
-        filename_re = re.compile(r"^.*/\d{8}/export-.*-output-([0-9]+)$")
-
-        gcs_bucket_ref = self.gcs_client.bucket(gcs_bucket)
-        self.delete_gcs_prefix(gcs_bucket_ref, self.get_gcs_prefix(prefix, version, date))
+        self.delete_gcs_prefix(self.gcs_client.bucket(gcs_bucket),
+                               self.get_gcs_prefix(prefix, version, date))
 
         # Transform data file into csv for each data type and then save to GCS
         for key in data_file_keys:
-            if filename_re.fullmatch(key) is None:  # not a data file
-                continue
-
             with tempfile.TemporaryDirectory() as data_dir:
                 csv_file_paths = self.transform_data_file(key, schemas, data_dir, s3_bucket)
 
                 for data_type, csv_file_path in csv_file_paths.items():
-                    self.write_to_gcs(csv_file_path, data_type, gcs_bucket_ref,
-                                      prefix, version, date)
-
-            break  # TODO: remove
+                    self.write_to_gcs(csv_file_path, data_type, gcs_bucket, prefix, version, date)
 
         self.create_external_tables(gcs_bucket, prefix, date, self.DATA_TYPES,
                                     self.TMP_DATASET, dataset, table_prefix, version)
