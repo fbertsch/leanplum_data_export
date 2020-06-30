@@ -9,12 +9,9 @@ import logging
 import sys
 
 from leanplum_data_export.export import LeanplumExporter
-from leanplum_data_export.export_streaming import StreamingLeanplumExporter
 
 
 @click.command()
-@click.option("--app-id", default=None)
-@click.option("--client-key", default=None)
 @click.option("--date", required=True)
 @click.option("--bucket", required=True)
 @click.option("--prefix", default="")
@@ -22,24 +19,13 @@ from leanplum_data_export.export_streaming import StreamingLeanplumExporter
 @click.option("--project", required=True)
 @click.option("--table-prefix", default=None)
 @click.option("--version", default=1)
-@click.option("--streaming/--no-streaming", default=False)
-@click.option("--s3-bucket", default=None,
-              help="For streaming export: name of the bucket to retrieve exported data from")
+@click.option("--s3-bucket", required=True,
+              help="Name of the bucket to retrieve exported streaming data from")
 @click.option("--clean/--no-clean", default=False,
-              help="For streaming export: a clean run will reprocess the entire day")
-def export_leanplum(app_id, client_key, date, bucket, prefix,
-                    bq_dataset, table_prefix, version, project,
-                    streaming, s3_bucket, clean):
-    if not streaming:
-        if app_id is None or client_key is None:
-            raise ValueError("--app-id and --client-key arguments must be "
-                             "specified for historical export")
-        exporter = LeanplumExporter(project, app_id, client_key)
-        exporter.export(date, bucket, prefix, bq_dataset, table_prefix, version)
-    else:
-        if s3_bucket is None:
-            raise ValueError("--s3-bucket must be specified for streaming export")
-        exporter = StreamingLeanplumExporter(project)
+              help="A clean run will reprocess the entire day")
+def export_leanplum(date, bucket, prefix, bq_dataset, table_prefix,
+                    version, project, s3_bucket, clean):
+        exporter = LeanplumExporter(project)
         exporter.export(date, s3_bucket, bucket, prefix, bq_dataset, table_prefix, version, clean)
 
 
