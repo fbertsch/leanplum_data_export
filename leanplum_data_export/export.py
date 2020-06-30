@@ -5,10 +5,12 @@ import os
 import re
 import tempfile
 from pathlib import Path
-from typing import Dict, List, Set, Union
+from typing import Dict, List, Set
 
 import boto3
 from google.cloud import bigquery, exceptions, storage
+
+from leanplum_data_export import data_parser
 
 
 class LeanplumExporter(object):
@@ -40,7 +42,7 @@ class LeanplumExporter(object):
         file_history = self.get_previously_imported_files(gcs_bucket, prefix, version, date)
 
         # Transform data file into csv for each data type and then save to GCS
-        for i, key in enumerate(data_file_keys):
+        for key in data_file_keys:
             data_file_name = os.path.basename(key)
             if data_file_name in file_history:
                 logging.info(f"Skipping export for {data_file_name}")
@@ -52,8 +54,9 @@ class LeanplumExporter(object):
                 for data_type, csv_file_path in csv_file_paths.items():
                     self.write_to_gcs(csv_file_path, data_type, gcs_bucket, prefix, version, date)
 
-            self.write_to_gcs(data_file_name, self.FILE_HISTORY_PREFIX,
-                              gcs_bucket, prefix, version, date)
+            with tempfile.NamedTemporaryFile() as empty_file:
+                self.write_to_gcs(Path(empty_file.name), self.FILE_HISTORY_PREFIX,
+                                  gcs_bucket, prefix, version, date, file_name=data_file_name)
 
         self.create_external_tables(gcs_bucket, prefix, date, self.DATA_TYPES,
                                     self.TMP_DATASET, dataset, table_prefix, version)
@@ -104,38 +107,35 @@ class LeanplumExporter(object):
 
         return set(file_names)
 
-    def write_to_gcs(self, file_path: Union[Path, str], data_type: str, bucket: str,
-                     prefix: str, version: str, date: str) -> None:
+    def write_to_gcs(self, file_path: Path, data_type: str, bucket: str,
+                     prefix: str, version: str, date: str, file_name: str = None) -> None:
         """
         Write file to GCS bucket
         If a Path is given as file_path, the file is uploaded
-        If a string is given as file_path, an empty file is uploaded
         """
-        file_name = file_path if isinstance(file_path, str) else file_path.name
+        if file_name is None:
+            file_name = file_path.name
         gcs_path = os.path.join(self.get_gcs_prefix(prefix, version, date, data_type), file_name)
 
         logging.info(f"Uploading {file_name} to gs://{gcs_path}")
         blob = self.gcs_client.bucket(bucket).blob(gcs_path)
-        if isinstance(file_path, str):
-            blob.upload_from_string("")
-        else:
-            blob.upload_from_filename(str(file_path))
+        blob.upload_from_filename(str(file_path))
 
     def write_to_csv(self, csv_writers: Dict[str, csv.DictWriter], session_data: Dict,
                      schemas: Dict[str, List[str]]) -> None:
-        for user_attribute in self.extract_user_attributes(session_data):
+        for user_attribute in data_parser.extract_user_attributes(session_data):
             csv_writers["userattributes"].writerow(user_attribute)
 
-        for state in self.extract_states(session_data):
+        for state in data_parser.extract_states(session_data):
             csv_writers["states"].writerow(state)
 
-        for experiment in self.extract_experiments(session_data):
+        for experiment in data_parser.extract_experiments(session_data):
             csv_writers["experiments"].writerow(experiment)
 
         csv_writers["sessions"].writerow(
-            self.extract_session(session_data, schemas["sessions"]))
+            data_parser.extract_session(session_data, schemas["sessions"]))
 
-        events, event_parameters = self.extract_events(session_data)
+        events, event_parameters = data_parser.extract_events(session_data)
         for event in events:
             csv_writers["events"].writerow(event)
         for event_parameter in event_parameters:
@@ -307,7 +307,8 @@ class LeanplumExporter(object):
 
     def parse_schema(self, data_type):
         try:
-            with open(os.path.join(self.SCHEMA_DIR, f"{data_type}.schema.json"), "r") as schema_file:
+            with open(os.path.join(
+                    self.SCHEMA_DIR, f"{data_type}.schema.json"), "r") as schema_file:
                 return [field for field in json.load(schema_file)]
         except FileNotFoundError:
             raise ValueError(f"Unrecognized table name encountered: {data_type}")
@@ -318,76 +319,3 @@ class LeanplumExporter(object):
             return os.path.join(prefix, f"v{version}", date, "")
         else:
             return os.path.join(prefix, f"v{version}", date, data_type, "")
-
-    @staticmethod
-    def extract_user_attributes(session_data):
-        attributes = []
-        for attribute, value in session_data.get("userAttributes", {}).items():
-            attributes.append({
-                "sessionId": int(session_data["sessionId"]),
-                "name": attribute,
-                "value": value,
-            })
-        return attributes
-
-    @staticmethod
-    def extract_states(session_data):
-        """
-        We don't seem to use states; csv export returns empty states csv's
-        stateId in the exported json is a random number assigned to an event according to
-        https://docs.leanplum.com/docs/reading-and-understanding-exported-sessions-data
-        """
-        return []
-
-    @staticmethod
-    def extract_experiments(session_data):
-        experiments = []
-        for experiment in session_data.get("experiments", []):
-            experiments.append({
-                "sessionId": int(session_data["sessionId"]),
-                "experimentId": experiment["id"],
-                "variantId": experiment["variantId"],
-            })
-        return experiments
-
-    @staticmethod
-    def extract_events(session_data):
-        events = []
-        event_parameters = []
-        for state in session_data.get("states", []):
-            for event in state.get("events", []):
-                events.append({
-                    "sessionId": int(session_data["sessionId"]),
-                    "stateId": state["stateId"],
-                    "eventId": event["eventId"],
-                    "eventName": event["name"],
-                    "start": event["time"],
-                    "value": event["value"],
-                    "info": event.get("info"),
-                    "timeUntilFirstForUser": event.get("timeUntilFirstForUser"),
-                })
-                for parameter, value in event.get("parameters", {}).items():
-                    event_parameters.append({
-                        "eventId": event["eventId"],
-                        "name": parameter,
-                        "value": value,
-                    })
-
-        return events, event_parameters
-
-    @staticmethod
-    def extract_session(session_data, session_columns):
-        # mapping from name in destination table to name in source data
-        field_name_mappings = {
-            "timezoneOffset": "timezoneOffsetSeconds",
-            "osName": "systemName",
-            "osVersion": "systemVersion",
-            "userStart": "firstRun",
-            "start": "time",
-        }
-        session = {}
-        for name in session_columns:
-            session[name] = session_data.get(field_name_mappings.get(name, name))
-        session["isDeveloper"] = session_data.get("isDeveloper", False)
-
-        return session

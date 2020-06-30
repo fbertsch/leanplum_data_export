@@ -22,11 +22,12 @@ from leanplum_data_export.export import LeanplumExporter
 @click.option("--s3-bucket", required=True,
               help="Name of the bucket to retrieve exported streaming data from")
 @click.option("--clean/--no-clean", default=False,
-              help="A clean run will reprocess the entire day")
+              help="A clean run will reprocess the entire day.  "
+                   "By default, files that have already been processed will be ignored.")
 def export_leanplum(date, bucket, prefix, bq_dataset, table_prefix,
                     version, project, s3_bucket, clean):
-        exporter = LeanplumExporter(project)
-        exporter.export(date, s3_bucket, bucket, prefix, bq_dataset, table_prefix, version, clean)
+    exporter = LeanplumExporter(project)
+    exporter.export(date, s3_bucket, bucket, prefix, bq_dataset, table_prefix, version, clean)
 
 
 @click.group()

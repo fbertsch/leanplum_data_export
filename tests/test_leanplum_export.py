@@ -9,6 +9,7 @@ import pytest
 from moto import mock_s3
 from google.cloud import bigquery
 
+from leanplum_data_export import data_parser
 from leanplum_data_export.export import LeanplumExporter
 
 
@@ -127,7 +128,7 @@ class TestStreamingExporter(object):
                     bucket, prefix, date, tables, ext_dataset_name, dataset_name, table_prefix, 1)
 
     def test_extract_user_attributes(self, exporter, sample_data):
-        user_attrs = exporter.extract_user_attributes(sample_data[0])
+        user_attrs = data_parser.extract_user_attributes(sample_data[0])
         expected = [
             {
                 "sessionId": 1,
@@ -143,12 +144,12 @@ class TestStreamingExporter(object):
         assert expected == user_attrs
 
     def test_extract_states(self, exporter, sample_data):
-        states = exporter.extract_states(sample_data[0])
+        states = data_parser.extract_states(sample_data[0])
         expected = []
         assert expected == states
 
     def test_extract_experiments(self, exporter, sample_data):
-        experiments = exporter.extract_experiments(sample_data[0])
+        experiments = data_parser.extract_experiments(sample_data[0])
         expected = [
             {
                 "sessionId": 1,
@@ -164,7 +165,7 @@ class TestStreamingExporter(object):
         assert expected == experiments
 
     def test_extract_events(self, exporter, sample_data):
-        events, event_params = exporter.extract_events(sample_data[0])
+        events, event_params = data_parser.extract_events(sample_data[0])
         expected_events = [
             {
                 "sessionId": 1,
@@ -200,7 +201,7 @@ class TestStreamingExporter(object):
 
     def test_extract_session(self, exporter, sample_data):
         session_columns = [field["name"] for field in exporter.parse_schema("sessions")]
-        session = exporter.extract_session(sample_data[0], session_columns)
+        session = data_parser.extract_session(sample_data[0], session_columns)
 
         expected_session = {
             "country": "US",
@@ -341,20 +342,19 @@ class TestStreamingExporter(object):
 
         mock_bucket.blob.assert_called_once_with("firefox/v1/20200601/sessions/c")
         mock_blob.upload_from_filename.assert_called_once_with("/a/b/c")
-        mock_blob.upload_from_string.assert_not_called()
 
     @patch("google.cloud.storage.Client")
-    def test_write_to_gcs_empty_file(self, mock_gcs, exporter):
+    def test_write_to_gcs_given_name(self, mock_gcs, exporter):
         mock_bucket, mock_blob = Mock(), Mock()
         mock_gcs.bucket.return_value = mock_bucket
         mock_bucket.blob.return_value = mock_blob
 
         exporter.gcs_client = mock_gcs
-        exporter.write_to_gcs("c", "sessions", "bucket", "firefox", "1", "20200601")
+        exporter.write_to_gcs(Path("/a/b/c"), "sessions", "bucket", "firefox", "1", "20200601",
+                              file_name="d")
 
-        mock_bucket.blob.assert_called_once_with("firefox/v1/20200601/sessions/c")
-        mock_blob.upload_from_filename.assert_not_called()
-        mock_blob.upload_from_string.assert_called_once_with("")
+        mock_bucket.blob.assert_called_once_with("firefox/v1/20200601/sessions/d")
+        mock_blob.upload_from_filename.assert_called_once_with("/a/b/c")
 
     def test_write_to_csv_write_count(self, exporter, sample_data):
         csv_writers = {data_type: Mock() for data_type in exporter.DATA_TYPES}
@@ -458,7 +458,7 @@ class TestStreamingExporter(object):
             call("a/b/file4", ANY, ANY, ANY),
         ])
         exporter.write_to_gcs.assert_has_calls([
-            call("file2", ANY, ANY, ANY, ANY, ANY),
-            call("file4", ANY, ANY, ANY, ANY, ANY),
+            call(ANY, ANY, ANY, ANY, ANY, ANY, file_name="file2"),
+            call(ANY, ANY, ANY, ANY, ANY, ANY, file_name="file4"),
         ])
         exporter.delete_gcs_prefix.assert_not_called()
