@@ -119,6 +119,7 @@ class LeanplumExporter(object):
 
         logging.info(f"Uploading {file_name} to gs://{gcs_path}")
         # set lower chunksize to avoid timeouts after 60s while uploading chunks (default is 100MB)
+        # More details here: https://github.com/googleapis/python-storage/issues/74
         blob = self.gcs_client.bucket(bucket).blob(gcs_path, chunk_size=1024*1024*50)
         blob.upload_from_filename(str(file_path))
 
