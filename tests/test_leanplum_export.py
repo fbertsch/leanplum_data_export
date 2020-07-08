@@ -340,7 +340,7 @@ class TestStreamingExporter(object):
         exporter.gcs_client = mock_gcs
         exporter.write_to_gcs(Path("/a/b/c"), "sessions", "bucket", "firefox", "1", "20200601")
 
-        mock_bucket.blob.assert_called_once_with("firefox/v1/20200601/sessions/c")
+        mock_bucket.blob.assert_called_once_with("firefox/v1/20200601/sessions/c", chunk_size=ANY)
         mock_blob.upload_from_filename.assert_called_once_with("/a/b/c")
 
     @patch("google.cloud.storage.Client")
@@ -353,7 +353,7 @@ class TestStreamingExporter(object):
         exporter.write_to_gcs(Path("/a/b/c"), "sessions", "bucket", "firefox", "1", "20200601",
                               file_name="d")
 
-        mock_bucket.blob.assert_called_once_with("firefox/v1/20200601/sessions/d")
+        mock_bucket.blob.assert_called_once_with("firefox/v1/20200601/sessions/d", chunk_size=ANY)
         mock_blob.upload_from_filename.assert_called_once_with("/a/b/c")
 
     def test_write_to_csv_write_count(self, exporter, sample_data):
