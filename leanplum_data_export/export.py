@@ -118,7 +118,8 @@ class LeanplumExporter(object):
         gcs_path = os.path.join(self.get_gcs_prefix(prefix, version, date, data_type), file_name)
 
         logging.info(f"Uploading {file_name} to gs://{gcs_path}")
-        blob = self.gcs_client.bucket(bucket).blob(gcs_path)
+        # set lower chunksize to avoid timeouts after 60s while uploading chunks (default is 100MB)
+        blob = self.gcs_client.bucket(bucket).blob(gcs_path, chunk_size=1024*1024*50)
         blob.upload_from_filename(str(file_path))
 
     def write_to_csv(self, csv_writers: Dict[str, csv.DictWriter], session_data: Dict,
