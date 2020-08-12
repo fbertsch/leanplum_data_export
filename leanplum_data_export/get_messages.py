@@ -2,7 +2,8 @@
 
 """Get all messages from leanplum API and save to bigquery."""
 
-from collections import OrderedDict
+import datetime
+import json
 
 import click
 import requests
@@ -36,16 +37,19 @@ def get_messages(date, app_id, client_key, project, bq_dataset, table_prefix, ve
     messages_response.raise_for_status()
 
     # See https://docs.leanplum.com/reference#get_api-action-getmessages for response structure
-    messages_json = messages_response.json()["response"][0]
+    messages_json = json.loads(
+        messages_response.text,
+        parse_float=lambda t: datetime.datetime.fromtimestamp(float(t)).isoformat()
+    )["response"][0]
 
     if "error" in messages_json:
         raise RuntimeError(messages_json["error"]["message"])
 
     messages = [
-        OrderedDict(
-            load_date="2020-08-10",
+        {
+            "load_date": date,
             **message,
-        ) for message in messages_json["messages"]
+        } for message in messages_json["messages"]
     ]
 
     print(f"Retrieved {len(messages)} messages")
