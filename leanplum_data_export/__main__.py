@@ -9,6 +9,7 @@ import logging
 import sys
 
 from leanplum_data_export.export import LeanplumExporter
+from leanplum_data_export.get_messages import LeanplumMessageFetcher
 
 
 @click.command()
@@ -30,6 +31,21 @@ def export_leanplum(date, bucket, prefix, bq_dataset, table_prefix,
     exporter.export(date, s3_bucket, bucket, prefix, bq_dataset, table_prefix, version, clean)
 
 
+@click.command()
+@click.option("--date", required=True)
+@click.option("--app-id", required=True)
+@click.option("--client-key", required=True)
+@click.option("--project", required=True)
+@click.option("--bq-dataset", required=True)
+@click.option("--table-prefix", default=None)
+@click.option("--version", default=1)
+def get_messages(date, app_id, client_key, project, bq_dataset, table_prefix, version):
+    message_fetcher = LeanplumMessageFetcher(
+        app_id, client_key, project, bq_dataset, table_prefix, version
+    )
+    message_fetcher.get_messages(date)
+
+
 @click.group()
 def main(args=None):
     """Command line utility"""
@@ -37,6 +53,7 @@ def main(args=None):
 
 
 main.add_command(export_leanplum)
+main.add_command(get_messages)
 
 
 if __name__ == "__main__":

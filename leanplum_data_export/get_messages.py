@@ -1,11 +1,8 @@
-#!/usr/bin/env python3
-
 """Get all messages from leanplum API and save to bigquery."""
 
 import datetime
 import json
 
-import click
 import requests
 from google.cloud import bigquery
 
@@ -14,66 +11,67 @@ LEANPLUM_API_URL = "https://api.leanplum.com/api"
 LEANPLUM_API_VERSION = "1.0.6"
 
 
-@click.command()
-@click.option("--date", required=True)
-@click.option("--app-id", required=True)
-@click.option("--client-key", required=True)
-@click.option("--project", required=True)
-@click.option("--bq-dataset", required=True)
-@click.option("--table-prefix", default=None)
-@click.option("--version", default=1)
-def get_messages(date, app_id, client_key, project, bq_dataset, table_prefix, version):
-    messages_response = requests.get(
-        LEANPLUM_API_URL,
-        params=dict(
-            action="getMessages",
-            appId=app_id,
-            clientKey=client_key,
-            apiVersion=LEANPLUM_API_VERSION,
-            recent=False,
-        ),
-    )
+class LeanplumMessageFetcher(object):
+    def __init__(self, app_id, client_key, project, bq_dataset, table_prefix, version):
+        self.app_id = app_id
+        self.client_key = client_key
+        self.project = project
+        self.bq_dataset = bq_dataset
+        self.table_prefix = table_prefix
+        self.version = version
 
-    messages_response.raise_for_status()
+    def write_to_bq(self, date, messages):
+        bq_client = bigquery.Client(project=self.project)
 
-    # See https://docs.leanplum.com/reference#get_api-action-getmessages for response structure
-    messages_json = json.loads(
-        messages_response.text,
-        parse_float=lambda t: datetime.datetime.fromtimestamp(float(t)).isoformat()
-    )["response"][0]
+        table_name = f"messages_v{self.version}"
+        if self.table_prefix is not None:
+            table_name = f"{self.table_prefix}_{table_name}"
 
-    if "error" in messages_json:
-        raise RuntimeError(messages_json["error"]["message"])
+        load_config = bigquery.LoadJobConfig(
+            time_partitioning=bigquery.TimePartitioning(field="load_date"),
+            create_disposition=bigquery.CreateDisposition.CREATE_IF_NEEDED,
+            write_disposition=bigquery.WriteDisposition.WRITE_TRUNCATE,
+            schema_update_options=bigquery.SchemaUpdateOption.ALLOW_FIELD_ADDITION,
+        )
+        load_job = bq_client.load_table_from_json(
+            messages,
+            destination=f"{self.bq_dataset}.{table_name}${date.replace('-', '')}",
+            job_config=load_config,
+        )
 
-    messages = [
-        {
-            "load_date": date,
-            **message,
-        } for message in messages_json["messages"]
-    ]
+        load_job.result()
 
-    print(f"Retrieved {len(messages)} messages")
+    def get_messages(self, date):
+        messages_response = requests.get(
+            LEANPLUM_API_URL,
+            params=dict(
+                action="getMessages",
+                appId=self.app_id,
+                clientKey=self.client_key,
+                apiVersion=LEANPLUM_API_VERSION,
+                recent=False,
+            ),
+        )
 
-    bq_client = bigquery.Client(project=project)
+        messages_response.raise_for_status()
 
-    table_name = f"messages_v{version}"
-    if table_prefix is not None:
-        table_name = f"{table_prefix}_{table_name}"
+        # Get messages as dict, converting timestamps to ISO datetime strings
+        # See https://docs.leanplum.com/reference#get_api-action-getmessages for response structure
+        messages_json = json.loads(
+            messages_response.text,
+            parse_float=lambda t: datetime.datetime.fromtimestamp(float(t)).isoformat()
+        )["response"][0]
 
-    load_config = bigquery.LoadJobConfig(
-        time_partitioning=bigquery.TimePartitioning(field="load_date"),
-        create_disposition=bigquery.CreateDisposition.CREATE_IF_NEEDED,
-        write_disposition=bigquery.WriteDisposition.WRITE_TRUNCATE,
-        schema_update_options=bigquery.SchemaUpdateOption.ALLOW_FIELD_ADDITION,
-    )
-    load_job = bq_client.load_table_from_json(
-        messages,
-        destination=f"{bq_dataset}.{table_name}${date.replace('-', '')}",
-        job_config=load_config,
-    )
+        if "error" in messages_json:
+            raise RuntimeError(messages_json["error"]["message"])
 
-    load_job.result()
+        messages = [
+            {
+                "load_date": date,
+                **message,
+            } for message in messages_json["messages"]
+        ]
 
+        print(f"Retrieved {len(messages)} messages")
 
-if __name__ == "__main__":
-    get_messages()
+        self.write_to_bq(date, messages)
