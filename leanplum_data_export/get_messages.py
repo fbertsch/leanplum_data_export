@@ -28,7 +28,10 @@ class LeanplumMessageFetcher(object):
             table_name = f"{self.table_prefix}_{table_name}"
 
         load_config = bigquery.LoadJobConfig(
-            time_partitioning=bigquery.TimePartitioning(field="load_date"),
+            time_partitioning=bigquery.TimePartitioning(
+                field="load_date",
+                require_partition_filter=True,
+            ),
             create_disposition=bigquery.CreateDisposition.CREATE_IF_NEEDED,
             write_disposition=bigquery.WriteDisposition.WRITE_TRUNCATE,
             schema_update_options=bigquery.SchemaUpdateOption.ALLOW_FIELD_ADDITION,
