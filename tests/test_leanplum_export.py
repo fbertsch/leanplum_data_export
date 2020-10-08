@@ -299,7 +299,7 @@ class TestStreamingExporter(object):
         assert expected == set(retrieved_keys)
 
     @mock_s3
-    def test_get_files_data_file_filtering(self):
+    def test_get_files_no_files(self):
         # can't use fixture because it's instantiated before moto3e
         exporter = LeanplumExporter("projectId")
 
