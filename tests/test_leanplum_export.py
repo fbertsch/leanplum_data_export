@@ -299,6 +299,21 @@ class TestStreamingExporter(object):
         assert expected == set(retrieved_keys)
 
     @mock_s3
+    def test_get_files_data_file_filtering(self):
+        # can't use fixture because it's instantiated before moto3e
+        exporter = LeanplumExporter("projectId")
+
+        bucket_name = "bucket"
+        date = "20200601"
+        prefix = "firefox"
+
+        s3_client = boto3.client("s3")
+        s3_client.create_bucket(Bucket=bucket_name)
+
+        with pytest.raises(AssertionError):
+            exporter.get_files(date, bucket_name, prefix)
+
+    @mock_s3
     def test_get_files_pagination(self):
         # can't use fixture because it's instantiated before moto
         streaming_exporter = LeanplumExporter("projectId")

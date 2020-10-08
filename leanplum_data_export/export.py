@@ -3,6 +3,7 @@ import json
 import logging
 import os
 import re
+import sys
 import tempfile
 from pathlib import Path
 from typing import Dict, List, Set
@@ -81,6 +82,13 @@ class LeanplumExporter(object):
                 **continuation_token,
                 **max_keys,
             )
+
+            try:
+                assert object_list["KeyCount"] > 0
+            except AssertionError:
+                print(f"Error: No data files found for date {date}", file=sys.stderr)
+                raise
+
             data_file_keys.extend([content["Key"] for content in object_list["Contents"]
                                    if filename_re.fullmatch(content["Key"])])
 
