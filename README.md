@@ -72,4 +72,4 @@ make test
 
 ### Deployment
 
-This project deploys automatically to Dockerhub. The latest release is used to run the job.
+This project deploys automatically to GCR. The latest release is used to run the job.
