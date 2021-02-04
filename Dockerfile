@@ -4,7 +4,7 @@ MAINTAINER Frank Bertsch <frank@mozilla.com>
 ARG APP_NAME=leanplum_data_export
 ENV APP_NAME=${APP_NAME}
 
-# Guidelines here: https://github.com/mozilla-services/Dockerflow/blob/master/docs/building-container.md
+# Guidelines here: https://github.com/mozilla-services/Dockerflow/blob/main/docs/building-container.md
 ARG USER_ID="10001"
 ARG GROUP_ID="app"
 ARG HOME="/app"
